@@ -1,0 +1,21 @@
+# Lima VM template for threat-scanner.
+# Resource values (cpus, memory, disk) are placeholders — they are overridden
+# by CLI flags passed to `limactl create`.
+
+vmType: "vz"
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+cpus: 4
+memory: "8GiB"
+disk: "50GiB"
+
+plain: true
+
+mounts: []
+
+portForwards: []
+
+networks: []

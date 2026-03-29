@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import sys
 from pathlib import Path
 
@@ -87,7 +88,10 @@ def run_scan(config: ScanConfig) -> None:
         from threat_scanner.vm.ssh import ssh_exec
         from threat_scanner.docker.sandbox import download_dependencies
 
-        ssh_exec(vm_name, f"git clone --depth=1 {config.repo_url} /opt/target")
+        safe_url = shlex.quote(config.repo_url)
+        stdout, stderr, rc = ssh_exec(vm_name, f"git clone --depth=1 {safe_url} /opt/target")
+        if rc != 0:
+            raise RuntimeError(f"git clone failed (exit {rc}): {stderr}")
         download_dependencies(vm_name, config)
 
         # Stage 3: Run deterministic scanners
@@ -95,7 +99,12 @@ def run_scan(config: ScanConfig) -> None:
         print_stage(stage_num, total_stages, "Running deterministic scanners...")
         from threat_scanner.scanners.runner import run_all_scanners
 
-        scanner_results = run_all_scanners(vm_name, config)
+        scanner_results_raw = run_all_scanners(vm_name, config)
+        # Convert list[ScanResults] to dict[str, list[dict]] for downstream consumers
+        scanner_results = {
+            sr.tool_name: [f.to_dict() for f in sr.findings]
+            for sr in scanner_results_raw
+        }
 
         if not config.skip_ai:
             # Stage 4: AI analysis
@@ -105,7 +114,9 @@ def run_scan(config: ScanConfig) -> None:
             from threat_scanner.agents.adversarial import run_adversarial_verification
 
             ai_findings = run_analysis(vm_name, config, scanner_results)
-            verified_findings = run_adversarial_verification(vm_name, config, ai_findings)
+            verified_findings = run_adversarial_verification(
+                vm_name, config, ai_findings, scanner_results
+            )
         else:
             verified_findings = None
 
