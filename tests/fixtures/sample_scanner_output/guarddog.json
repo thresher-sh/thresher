@@ -1,0 +1,24 @@
+{
+  "suspicious-pkg": {
+    "results": {
+      "shady-link": [
+        {
+          "location": "/opt/target/suspicious-pkg/setup.py",
+          "message": "URL found pointing to known malicious domain"
+        }
+      ],
+      "code-execution": [
+        {
+          "location": "/opt/target/suspicious-pkg/__init__.py",
+          "message": "exec() called with dynamically constructed string"
+        },
+        {
+          "message": "Base64 decoded content passed to exec()"
+        }
+      ]
+    }
+  },
+  "clean-pkg": {
+    "results": {}
+  }
+}

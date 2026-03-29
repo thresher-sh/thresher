@@ -23,5 +23,10 @@ dev = [
 [project.scripts]
 threat-scan = "threat_scanner.cli:main"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["e2e: end-to-end tests requiring a Lima VM (deselect with '-m not e2e')"]
+filterwarnings = ["error"]
+
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,0 +1,66 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "CVE-2024-1234",
+        "severity": "Critical",
+        "description": "Remote code execution in example-lib",
+        "fix": {
+          "versions": ["1.2.4"],
+          "state": "fixed"
+        },
+        "cvss": [
+          {
+            "version": "3.1",
+            "metrics": {
+              "baseScore": 9.8
+            }
+          }
+        ]
+      },
+      "artifact": {
+        "name": "example-lib",
+        "version": "1.2.3"
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2024-5678",
+        "severity": "Medium",
+        "description": "Information disclosure in helper-pkg",
+        "fix": {
+          "versions": [],
+          "state": "unknown"
+        },
+        "cvss": [
+          {
+            "version": "3.1",
+            "metrics": {
+              "baseScore": 5.3
+            }
+          }
+        ]
+      },
+      "artifact": {
+        "name": "helper-pkg",
+        "version": "0.9.1"
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-xxxx-yyyy-zzzz",
+        "severity": "Low",
+        "description": "Minor issue in util-pkg",
+        "fix": {
+          "versions": ["2.0.0"],
+          "state": "fixed"
+        },
+        "cvss": []
+      },
+      "artifact": {
+        "name": "util-pkg",
+        "version": "1.0.0"
+      }
+    }
+  ]
+}

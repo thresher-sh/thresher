@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.eval-usage",
+      "path": "/opt/target/src/utils.py",
+      "start": {
+        "line": 42,
+        "col": 5
+      },
+      "end": {
+        "line": 42,
+        "col": 30
+      },
+      "extra": {
+        "severity": "ERROR",
+        "message": "Avoid using eval(). It can execute arbitrary code.",
+        "metadata": {
+          "cwe": ["CWE-94", "CWE-95"],
+          "cve": null
+        }
+      }
+    },
+    {
+      "check_id": "python.lang.security.audit.subprocess-shell-true",
+      "path": "/opt/target/src/runner.py",
+      "start": {
+        "line": 15,
+        "col": 1
+      },
+      "end": {
+        "line": 15,
+        "col": 50
+      },
+      "extra": {
+        "severity": "WARNING",
+        "message": "subprocess call with shell=True can lead to command injection.",
+        "metadata": {
+          "cwe": ["CWE-78"],
+          "cve": null
+        }
+      }
+    }
+  ]
+}

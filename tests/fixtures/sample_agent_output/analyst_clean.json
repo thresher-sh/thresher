@@ -1,0 +1,37 @@
+{
+  "analysis_summary": "Project contains two high-risk files with suspicious patterns.",
+  "files_analyzed": 15,
+  "high_risk_count": 2,
+  "findings": [
+    {
+      "file_path": "/opt/target/setup.py",
+      "risk_score": 7,
+      "findings": [
+        {
+          "pattern": "base64_exec",
+          "description": "Base64-encoded string decoded and passed to exec() at import time",
+          "line_numbers": [14, 15, 16],
+          "severity": "high",
+          "confidence": 85
+        }
+      ],
+      "reasoning": "The setup.py decodes a base64 string and executes it during package installation.",
+      "git_blame_notes": "Lines 14-16 added in recent commit by unknown contributor.",
+      "stripped_reanalysis": "Pattern persists after comment removal."
+    },
+    {
+      "file_path": "/opt/target/src/utils.py",
+      "risk_score": 3,
+      "findings": [
+        {
+          "pattern": "dynamic_import",
+          "description": "importlib used to load modules dynamically based on config",
+          "line_numbers": [8],
+          "severity": "low",
+          "confidence": 40
+        }
+      ],
+      "reasoning": "Dynamic import is used for plugin loading, a common legitimate pattern."
+    }
+  ]
+}

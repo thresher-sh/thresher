@@ -67,7 +67,7 @@ fi
 # ---------------------------------------------------------------------------
 # Python 3, pip, venv
 # ---------------------------------------------------------------------------
-if command -v python3 &>/dev/null && python3 -c "import venv" 2>/dev/null; then
+if command -v python3 &>/dev/null && python3 -m pip --version &>/dev/null && python3 -c "import venv" 2>/dev/null; then
     log "Python 3 already installed: $(python3 --version)"
 else
     log "Installing Python 3, pip, and venv..."
@@ -172,7 +172,7 @@ if command -v semgrep &>/dev/null; then
     log "Semgrep already installed: $(semgrep --version 2>/dev/null || echo 'version check skipped')"
 else
     log "Installing Semgrep..."
-    pip3 install --break-system-packages semgrep
+    python3 -m pip install --break-system-packages --ignore-installed semgrep
     log "Semgrep installed."
 fi
 
@@ -181,7 +181,9 @@ if command -v guarddog &>/dev/null; then
     log "GuardDog already installed."
 else
     log "Installing GuardDog..."
-    pip3 install --break-system-packages guarddog
+    python3 -m pip install --break-system-packages --ignore-installed guarddog
+    # Initialize GuardDog's package cache (writes to dist-packages dir)
+    guarddog --help >/dev/null 2>&1 || true
     log "GuardDog installed."
 fi
 

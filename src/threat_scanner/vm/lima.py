@@ -47,8 +47,8 @@ def create_vm(config: ScanConfig) -> str:
         "create",
         "--name", vm_name,
         f"--cpus={config.vm.cpus}",
-        f"--memory={config.vm.memory}GiB",
-        f"--disk={config.vm.disk}GiB",
+        f"--memory={config.vm.memory}",
+        f"--disk={config.vm.disk}",
         "--plain",
         str(_TEMPLATE_PATH),
     ]

@@ -1,0 +1,26 @@
+{
+  "verification_summary": "Reviewed 2 high-risk findings. 1 confirmed, 1 downgraded.",
+  "total_reviewed": 2,
+  "confirmed_count": 1,
+  "downgraded_count": 1,
+  "results": [
+    {
+      "file_path": "/opt/target/setup.py",
+      "original_risk_score": 7,
+      "verdict": "confirmed",
+      "revised_risk_score": 7,
+      "benign_explanation_attempted": "Attempted to explain as setuptools plugin loading, but base64 encoding has no legitimate purpose here.",
+      "reasoning": "The combination of base64 decoding + exec at import time has no standard justification.",
+      "confidence": 90
+    },
+    {
+      "file_path": "/opt/target/conftest.py",
+      "original_risk_score": 5,
+      "verdict": "downgraded",
+      "revised_risk_score": 2,
+      "benign_explanation_attempted": "Standard pytest conftest.py pattern using importlib for fixture loading.",
+      "reasoning": "Dynamic import matches pytest documented plugin mechanism. Code stable for 3 years.",
+      "confidence": 95
+    }
+  ]
+}

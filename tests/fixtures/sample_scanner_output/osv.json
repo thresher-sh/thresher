@@ -1,0 +1,62 @@
+{
+  "results": [
+    {
+      "source": {
+        "path": "/opt/target/requirements.txt",
+        "type": "lockfile"
+      },
+      "packages": [
+        {
+          "package": {
+            "name": "example-lib",
+            "version": "1.2.3",
+            "ecosystem": "PyPI"
+          },
+          "vulnerabilities": [
+            {
+              "id": "CVE-2024-1234",
+              "summary": "Remote code execution in example-lib",
+              "details": "A remote code execution vulnerability exists in example-lib before 1.2.4.",
+              "severity": [
+                {
+                  "type": "CVSS_V3",
+                  "score": "9.8"
+                }
+              ],
+              "affected": [
+                {
+                  "ranges": [
+                    {
+                      "type": "ECOSYSTEM",
+                      "events": [
+                        {"introduced": "0"},
+                        {"fixed": "1.2.4"}
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "database_specific": {
+                "severity": "CRITICAL"
+              }
+            }
+          ]
+        },
+        {
+          "package": {
+            "name": "evil-package",
+            "version": "0.0.1",
+            "ecosystem": "PyPI"
+          },
+          "vulnerabilities": [
+            {
+              "id": "MAL-2024-9999",
+              "summary": "Malicious package: data exfiltration",
+              "details": "This package exfiltrates environment variables to a remote server on import."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

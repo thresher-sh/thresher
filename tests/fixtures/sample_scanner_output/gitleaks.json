@@ -1,0 +1,24 @@
+[
+  {
+    "RuleID": "aws-access-key-id",
+    "Description": "AWS Access Key ID",
+    "File": "config/settings.py",
+    "StartLine": 10,
+    "EndLine": 10,
+    "Commit": "abc123def456",
+    "Author": "dev@example.com",
+    "Date": "2024-01-15T10:30:00Z",
+    "Match": "AKIAIOSFODNN7EXAMPLE1234567890"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "Description": "Generic API Key",
+    "File": "src/client.py",
+    "StartLine": 25,
+    "EndLine": 25,
+    "Commit": "def456abc789",
+    "Author": "dev@example.com",
+    "Date": "2024-02-01T14:00:00Z",
+    "Match": "sk_live_abcdef123456"
+  }
+]
