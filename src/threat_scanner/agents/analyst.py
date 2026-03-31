@@ -213,10 +213,24 @@ def _format_analyst_markdown(findings: dict[str, Any]) -> str:
     lines.append(f"**High risk count:** {findings.get('high_risk_count', 0)}")
     lines.append("")
 
+    # Show what areas were investigated
+    areas = findings.get("investigation_areas", [])
+    if areas:
+        lines.append("## Investigation Areas")
+        lines.append("")
+        for area in areas:
+            lines.append(f"- {area}")
+        lines.append("")
+
     finding_list = findings.get("findings", [])
     if not finding_list:
-        lines.append("No findings.")
+        lines.append("## Findings")
+        lines.append("")
+        lines.append("No security concerns identified. All investigated files appear clean.")
         return "\n".join(lines)
+
+    lines.append(f"## Findings ({len(finding_list)})")
+    lines.append("")
 
     for i, f in enumerate(finding_list, 1):
         fp = f.get("file_path", "unknown").replace("/opt/target/", "")

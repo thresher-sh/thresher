@@ -264,6 +264,19 @@ def run_adversarial_verification(
 
     if not high_risk:
         logger.info("No high-risk findings to verify — skipping adversarial agent")
+        # Still write the report explaining why verification was skipped
+        try:
+            num_findings = len(ai_findings.get("findings", []))
+            md = (
+                "# AI Security Researcher — Adversarial Verification\n\n"
+                f"**Status:** Skipped — no findings scored >= {RISK_THRESHOLD}/10\n\n"
+                f"The analyst identified {num_findings} finding(s), but all scored "
+                f"below the adversarial review threshold of {RISK_THRESHOLD}. "
+                "No adversarial verification was needed.\n"
+            )
+            ssh_write_file(vm_name, md, "/opt/scan-results/adversarial-findings.md")
+        except Exception:
+            logger.warning("Failed to save adversarial skip report", exc_info=True)
         return ai_findings
 
     logger.info(

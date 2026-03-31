@@ -13,3 +13,4 @@ venv/
 scan-results/
 scanner.toml
 logs/
+.DS_Store
