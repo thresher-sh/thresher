@@ -36,7 +36,7 @@ def run_osv(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
         ScanResults with parsed Finding objects.
     """
     output_path = f"{output_dir}/osv.json"
-    cmd = f"osv-scanner scan --format json {target_dir} > {output_path} 2>&1"
+    cmd = f"osv-scanner scan --format json {target_dir} > {output_path} 2>/dev/null"
 
     start = time.monotonic()
     try:

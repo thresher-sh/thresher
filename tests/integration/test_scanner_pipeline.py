@@ -22,6 +22,16 @@ def _load(name: str) -> str:
 
 
 class TestRunAllScanners:
+    @patch("threat_scanner.scanners.clamav.ssh_exec")
+    @patch("threat_scanner.scanners.scancode.ssh_exec")
+    @patch("threat_scanner.scanners.cargo_audit.ssh_exec")
+    @patch("threat_scanner.scanners.govulncheck.ssh_exec")
+    @patch("threat_scanner.scanners.capa_scanner.ssh_exec")
+    @patch("threat_scanner.scanners.yara_scanner.ssh_exec")
+    @patch("threat_scanner.scanners.trivy.ssh_exec")
+    @patch("threat_scanner.scanners.hadolint.ssh_exec")
+    @patch("threat_scanner.scanners.checkov.ssh_exec")
+    @patch("threat_scanner.scanners.bandit.ssh_exec")
     @patch("threat_scanner.scanners.runner.ssh_exec")
     @patch("threat_scanner.scanners.syft.ssh_exec")
     @patch("threat_scanner.scanners.grype.ssh_exec")
@@ -30,7 +40,10 @@ class TestRunAllScanners:
     @patch("threat_scanner.scanners.guarddog.ssh_exec")
     @patch("threat_scanner.scanners.gitleaks.ssh_exec")
     def test_happy_path(
-        self, mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh
+        self,
+        mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
+        mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
+        mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
     ):
         # Runner's mkdir call
         mock_runner_ssh.return_value = SSHResult("", "", 0)
@@ -60,13 +73,46 @@ class TestRunAllScanners:
             SSHResult(_load("gitleaks.json"), "", 0),
         ]
 
+        # New scanners: return minimal valid output
+        mock_bandit.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"results":[]}', "", 0),
+        ]
+        mock_checkov.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"results":{"failed_checks":[]}}', "", 0),
+        ]
+        # hadolint: find returns no dockerfiles
+        mock_hadolint.return_value = SSHResult("", "", 0)
+        mock_trivy.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"Results":[]}', "", 0),
+        ]
+        # yara: rules dir not found
+        mock_yara.return_value = SSHResult("", "", 0)
+        # capa: no binaries found
+        mock_capa.return_value = SSHResult("", "", 0)
+        # govulncheck: no go.mod
+        mock_govulncheck.return_value = SSHResult("", "", 0)
+        # cargo-audit: no Cargo.lock
+        mock_cargo_audit.return_value = SSHResult("", "", 0)
+        mock_scancode.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"files":[]}', "", 0),
+        ]
+        mock_clamav.return_value = SSHResult("", "", 0)
+
         results = run_all_scanners("test-vm", _make_config())
 
-        # Should have 6 results (syft + 5 parallel)
-        assert len(results) == 6
+        # Should have 16 results (syft + 15 parallel)
+        assert len(results) == 16
 
         tool_names = {r.tool_name for r in results}
-        assert tool_names == {"syft", "grype", "osv-scanner", "semgrep", "guarddog", "gitleaks"}
+        assert tool_names == {
+            "syft", "grype", "osv-scanner", "semgrep", "guarddog", "gitleaks",
+            "bandit", "checkov", "hadolint", "trivy", "yara", "capa",
+            "govulncheck", "cargo-audit", "scancode", "clamav",
+        }
 
         # Check that findings were parsed
         grype_result = [r for r in results if r.tool_name == "grype"][0]
@@ -75,6 +121,16 @@ class TestRunAllScanners:
         gitleaks_result = [r for r in results if r.tool_name == "gitleaks"][0]
         assert len(gitleaks_result.findings) == 2
 
+    @patch("threat_scanner.scanners.clamav.ssh_exec")
+    @patch("threat_scanner.scanners.scancode.ssh_exec")
+    @patch("threat_scanner.scanners.cargo_audit.ssh_exec")
+    @patch("threat_scanner.scanners.govulncheck.ssh_exec")
+    @patch("threat_scanner.scanners.capa_scanner.ssh_exec")
+    @patch("threat_scanner.scanners.yara_scanner.ssh_exec")
+    @patch("threat_scanner.scanners.trivy.ssh_exec")
+    @patch("threat_scanner.scanners.hadolint.ssh_exec")
+    @patch("threat_scanner.scanners.checkov.ssh_exec")
+    @patch("threat_scanner.scanners.bandit.ssh_exec")
     @patch("threat_scanner.scanners.runner.ssh_exec")
     @patch("threat_scanner.scanners.syft.ssh_exec")
     @patch("threat_scanner.scanners.grype.ssh_exec")
@@ -83,7 +139,10 @@ class TestRunAllScanners:
     @patch("threat_scanner.scanners.guarddog.ssh_exec")
     @patch("threat_scanner.scanners.gitleaks.ssh_exec")
     def test_scanner_exception_handled(
-        self, mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh
+        self,
+        mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
+        mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
+        mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
     ):
         mock_runner_ssh.return_value = SSHResult("", "", 0)
         mock_syft.return_value = SSHResult("", "", 0)
@@ -97,16 +156,50 @@ class TestRunAllScanners:
         mock_gd.side_effect = [SSHResult("", "", 0), SSHResult("{}", "", 0)]
         mock_gl.return_value = SSHResult("", "", 0)
 
+        # New scanners: minimal valid responses
+        mock_bandit.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"results":[]}', "", 0),
+        ]
+        mock_checkov.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"results":{"failed_checks":[]}}', "", 0),
+        ]
+        mock_hadolint.return_value = SSHResult("", "", 0)
+        mock_trivy.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"Results":[]}', "", 0),
+        ]
+        mock_yara.return_value = SSHResult("", "", 0)
+        mock_capa.return_value = SSHResult("", "", 0)
+        mock_govulncheck.return_value = SSHResult("", "", 0)
+        mock_cargo_audit.return_value = SSHResult("", "", 0)
+        mock_scancode.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"files":[]}', "", 0),
+        ]
+        mock_clamav.return_value = SSHResult("", "", 0)
+
         results = run_all_scanners("test-vm", _make_config())
 
-        # All 6 should still be present
-        assert len(results) == 6
+        # All 16 should still be present
+        assert len(results) == 16
 
         # Grype should have an error entry
         grype = [r for r in results if r.tool_name == "grype"][0]
         assert grype.exit_code == -1
         assert len(grype.errors) > 0
 
+    @patch("threat_scanner.scanners.clamav.ssh_exec")
+    @patch("threat_scanner.scanners.scancode.ssh_exec")
+    @patch("threat_scanner.scanners.cargo_audit.ssh_exec")
+    @patch("threat_scanner.scanners.govulncheck.ssh_exec")
+    @patch("threat_scanner.scanners.capa_scanner.ssh_exec")
+    @patch("threat_scanner.scanners.yara_scanner.ssh_exec")
+    @patch("threat_scanner.scanners.trivy.ssh_exec")
+    @patch("threat_scanner.scanners.hadolint.ssh_exec")
+    @patch("threat_scanner.scanners.checkov.ssh_exec")
+    @patch("threat_scanner.scanners.bandit.ssh_exec")
     @patch("threat_scanner.scanners.runner.ssh_exec")
     @patch("threat_scanner.scanners.syft.ssh_exec")
     @patch("threat_scanner.scanners.grype.ssh_exec")
@@ -115,7 +208,10 @@ class TestRunAllScanners:
     @patch("threat_scanner.scanners.guarddog.ssh_exec")
     @patch("threat_scanner.scanners.gitleaks.ssh_exec")
     def test_exit_code_1_is_findings(
-        self, mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh
+        self,
+        mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
+        mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
+        mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
     ):
         """Exit code 1 from Grype/OSV/Gitleaks means findings found, not error."""
         mock_runner_ssh.return_value = SSHResult("", "", 0)
@@ -135,6 +231,30 @@ class TestRunAllScanners:
             SSHResult("", "", 1),
             SSHResult("[]", "", 0),
         ]
+
+        # New scanners: minimal valid responses
+        mock_bandit.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"results":[]}', "", 0),
+        ]
+        mock_checkov.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"results":{"failed_checks":[]}}', "", 0),
+        ]
+        mock_hadolint.return_value = SSHResult("", "", 0)
+        mock_trivy.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"Results":[]}', "", 0),
+        ]
+        mock_yara.return_value = SSHResult("", "", 0)
+        mock_capa.return_value = SSHResult("", "", 0)
+        mock_govulncheck.return_value = SSHResult("", "", 0)
+        mock_cargo_audit.return_value = SSHResult("", "", 0)
+        mock_scancode.side_effect = [
+            SSHResult("", "", 0),
+            SSHResult('{"files":[]}', "", 0),
+        ]
+        mock_clamav.return_value = SSHResult("", "", 0)
 
         results = run_all_scanners("test-vm", _make_config())
 

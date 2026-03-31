@@ -210,16 +210,34 @@ def _build_adversarial_prompt(findings: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
+def _extract_result_from_stream(raw_output: str) -> str:
+    """Extract the final result text from stream-json output."""
+    result_text = ""
+    for line in raw_output.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            if isinstance(obj, dict) and obj.get("type") == "result":
+                result_text = obj.get("result", "")
+            elif isinstance(obj, dict) and "result" in obj and "type" not in obj:
+                result_text = obj["result"]
+        except json.JSONDecodeError:
+            continue
+    return result_text if result_text else raw_output
+
+
 def _parse_adversarial_output(raw_output: str) -> dict[str, Any]:
     """Parse JSON from the adversarial agent output.
 
-    Handles the same output envelope and malformed output cases as the analyst parser.
+    Supports both --output-format json and stream-json.
     """
     if not raw_output or not raw_output.strip():
         logger.warning("Empty output from adversarial agent")
         return {"results": [], "error": "Agent returned empty output"}
 
-    text = raw_output.strip()
+    text = _extract_result_from_stream(raw_output).strip()
 
     # Try direct parse
     try:
@@ -389,10 +407,12 @@ def run_adversarial_verification(
     # Pass the API key via env so Claude Code can authenticate.
     model = config.model
     claude_cmd = (
+        f"cd /opt/target && "
         f"claude -p \"$(cat /tmp/adversarial_prompt.txt)\" "
         f"--model {model} "
         f'--allowedTools "Read,Glob,Grep" '
-        f"--output-format json "
+        f"--output-format stream-json "
+        f"--verbose "
         f"--max-turns 20"
     )
 

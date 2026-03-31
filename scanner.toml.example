@@ -17,4 +17,4 @@ tmux = true
 [vm]
 cpus = 4
 memory = 8   # GB
-disk = 50    # GB
+disk = 20    # GB

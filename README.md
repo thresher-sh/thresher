@@ -2,6 +2,14 @@
 
 AI-powered supply chain security scanner for evaluating open source packages before adoption. Scans a target repository and its dependencies for known vulnerabilities, malicious code, secrets, and supply chain risks, then produces a static go/no-go report.
 
+## Disclaimer
+
+This is WIP, no guarantee to catch anything. It is best effort, and use at your own risk. 
+
+## Disk Usage Notice
+
+VM it creates needs about **15gb** of free disk space to operate on your mac. It's downloading a lot of tools and databases for scanners etc... You also need to have space to download the repos you expect to scan, if you do a **15gb** image (Configurable in the `scanner.toml` file) you'll end up with about `2gb` of space inside the container to download source code and dependencies with.
+
 ## How It Works
 
 ```
@@ -149,6 +157,7 @@ Reports are written to the output directory:
 | capa | Binary Analysis | Capabilities in compiled binaries (networking, crypto, persistence) |
 | govulncheck | SCA (Go) | Go vulnerabilities with call-graph analysis (reduced false positives) |
 | cargo-audit | SCA (Rust) | Rust vulnerabilities from the RustSec advisory database |
+| ClamAV | Antivirus | Known virus and malware signatures |
 | ScanCode | License | License compliance from file contents, not just manifests |
 
 ## Security Model

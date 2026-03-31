@@ -40,15 +40,15 @@ def run_yara(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
                 execution_time_seconds=elapsed,
                 exit_code=0,
                 findings=[],
-                errors=["YARA rules directory /opt/yara-rules not found"],
             )
 
         # Run YARA with key rule categories, suppressing errors from
         # individual rule files that fail to compile.
+        # Exclude .git directory to avoid false positives on hook samples.
         cmd = (
             f"for f in /opt/yara-rules/malware/MALW_*.yar "
             f"/opt/yara-rules/packers/*.yar; do "
-            f"yara -r \"$f\" {target_dir} 2>/dev/null; "
+            f"yara -r \"$f\" {target_dir} 2>/dev/null | grep -v '/.git/'; "
             f"done > {output_path}"
         )
 

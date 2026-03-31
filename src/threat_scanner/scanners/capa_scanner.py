@@ -33,10 +33,11 @@ def run_capa(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
     start = time.monotonic()
     try:
         # Find executable binaries and common binary file extensions.
+        # Exclude .git directory to avoid false positives on hook samples.
         find_cmd = (
-            f"{{ find {target_dir} -type f -executable 2>/dev/null; "
-            f'find {target_dir} -type f \\( -name "*.so" -o -name "*.dll" '
-            f'-o -name "*.exe" \\) 2>/dev/null; }} | sort -u'
+            f"{{ find {target_dir} -path '*/.git' -prune -o -type f -executable -print 2>/dev/null; "
+            f"find {target_dir} -path '*/.git' -prune -o -type f "
+            f'\\( -name "*.so" -o -name "*.dll" -o -name "*.exe" \\) -print 2>/dev/null; }} | sort -u'
         )
         find_result = ssh_exec(vm_name, find_cmd)
         elapsed = time.monotonic() - start

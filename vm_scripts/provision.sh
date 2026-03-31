@@ -286,22 +286,43 @@ if command -v capa &>/dev/null; then
     log "capa already installed."
 else
     log "Installing capa..."
-    CAPA_ARCH="$(dpkg --print-architecture)"
-    if [ "$CAPA_ARCH" = "arm64" ]; then CAPA_SUFFIX="linux-aarch64"; else CAPA_SUFFIX="linux"; fi
-    CAPA_VERSION=$(curl -sSf https://api.github.com/repos/mandiant/capa/releases/latest | grep '"tag_name"' | head -1 | sed 's/.*"v\(.*\)".*/\1/')
-    curl -sSfL "https://github.com/mandiant/capa/releases/download/v${CAPA_VERSION}/capa-v${CAPA_VERSION}-${CAPA_SUFFIX}.zip" -o /tmp/capa.zip
-    cd /tmp && unzip -o capa.zip -d capa-extract && sudo cp capa-extract/capa /usr/local/bin/ && sudo chmod +x /usr/local/bin/capa
-    rm -rf /tmp/capa.zip /tmp/capa-extract
-    log "capa installed."
+    sudo apt-get install -y -qq unzip
+    if python3 -m pip install --break-system-packages --ignore-installed flare-capa 2>&1; then
+        log "capa installed."
+    else
+        log "WARNING: capa installation failed (optional, continuing without it)."
+    fi
+fi
+
+# --- ClamAV (open source antivirus) ---
+if command -v clamscan &>/dev/null; then
+    log "ClamAV already installed: $(clamscan --version 2>/dev/null | head -1 || echo 'version check skipped')"
+else
+    log "Installing ClamAV..."
+    sudo apt-get install -y -qq clamav clamav-daemon
+    # Stop the daemon (we only need clamscan for on-demand scanning)
+    sudo systemctl stop clamav-freshclam 2>/dev/null || true
+    sudo systemctl stop clamav-daemon 2>/dev/null || true
+    # Update virus definitions
+    log "Updating ClamAV virus definitions..."
+    sudo freshclam --quiet 2>/dev/null || true
+    log "ClamAV installed."
 fi
 
 # --- ScanCode Toolkit (license compliance) ---
+# Requires libicu-dev for pyicu. Heavy install (~500MB).
+# Non-fatal: scancode is optional and has complex native dependencies.
 if command -v scancode &>/dev/null; then
     log "ScanCode already installed."
 else
+    log "Installing ScanCode Toolkit dependencies..."
+    sudo apt-get install -y -qq pkg-config libicu-dev || true
     log "Installing ScanCode Toolkit..."
-    python3 -m pip install --break-system-packages --ignore-installed scancode-toolkit
-    log "ScanCode installed."
+    if python3 -m pip install --break-system-packages --ignore-installed scancode-toolkit 2>&1; then
+        log "ScanCode installed."
+    else
+        log "WARNING: ScanCode installation failed (optional, continuing without it)."
+    fi
 fi
 
 # ---------------------------------------------------------------------------

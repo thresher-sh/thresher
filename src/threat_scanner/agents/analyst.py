@@ -238,17 +238,42 @@ def _build_analyst_prompt(
     return "\n".join(parts)
 
 
+def _extract_result_from_stream(raw_output: str) -> str:
+    """Extract the final result text from stream-json output.
+
+    stream-json emits one JSON object per line. The last ``result`` message
+    contains the agent's final response text.  If no result message is found,
+    returns the raw output so the downstream parser can try its luck.
+    """
+    result_text = ""
+    for line in raw_output.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            # stream-json result message has type=="result" with a "result" field
+            if isinstance(obj, dict) and obj.get("type") == "result":
+                result_text = obj.get("result", "")
+            # Also handle {"result": "..."} envelope from non-stream format
+            elif isinstance(obj, dict) and "result" in obj and "type" not in obj:
+                result_text = obj["result"]
+        except json.JSONDecodeError:
+            continue
+    return result_text if result_text else raw_output
+
+
 def _parse_agent_json_output(raw_output: str) -> dict[str, Any]:
     """Parse JSON from Claude Code headless output, handling malformed responses.
 
-    Claude Code with --output-format json wraps the response in a JSON envelope.
-    The agent's actual response text (which itself should be JSON) is inside that.
+    Supports both --output-format json (single envelope) and
+    --output-format stream-json (newline-delimited events).
     """
     if not raw_output or not raw_output.strip():
         logger.warning("Empty output from analyst agent")
         return _empty_findings("Agent returned empty output")
 
-    text = raw_output.strip()
+    text = _extract_result_from_stream(raw_output).strip()
 
     # Try direct JSON parse first (agent output may be clean JSON)
     try:
@@ -376,10 +401,12 @@ def run_analysis(
     # Pass the API key via env so Claude Code can authenticate.
     model = config.model
     claude_cmd = (
+        f"cd /opt/target && "
         f"claude -p \"$(cat /tmp/analyst_prompt.txt)\" "
         f"--model {model} "
-        f'--allowedTools "Read,Glob,Grep,Bash" '
-        f"--output-format json "
+        f'--allowedTools "Read,Glob,Grep" '
+        f"--output-format stream-json "
+        f"--verbose "
         f"--max-turns 30"
     )
 

@@ -19,6 +19,7 @@ log() {
 declare -A WHITELIST_DOMAINS=(
     ["api.anthropic.com"]="Claude API"
     ["github.com"]="GitHub"
+    ["api.github.com"]="GitHub API"
     ["pypi.org"]="Python Package Index"
     ["files.pythonhosted.org"]="Python package downloads"
     ["registry.npmjs.org"]="npm registry"
@@ -31,9 +32,11 @@ declare -A WHITELIST_DOMAINS=(
     ["grype.anchore.io"]="Grype vulnerability DB listings"
     ["api.osv.dev"]="OSV vulnerability database"
     ["semgrep.dev"]="Semgrep rule registry"
+    ["metrics.semgrep.dev"]="Semgrep metrics/telemetry"
     ["ghcr.io"]="GitHub Container Registry (Trivy DB)"
     ["pkg-containers.githubusercontent.com"]="GitHub packages CDN (Trivy DB)"
     ["vuln.go.dev"]="Go vulnerability database"
+    ["database.clamav.net"]="ClamAV virus definitions"
 )
 
 resolve_domain() {

@@ -122,7 +122,8 @@ def _collect_findings(
                         enriched_af["ai_risk_score"] = enriched_af["risk_score"]
                     enriched_af.setdefault("source_tool", "ai_analysis")
                     enriched_af.setdefault("category", "ai_analysis")
-                    # Extract confidence from sub-findings if present
+
+                    # Synthesize title, description, severity from nested findings
                     sub_findings = enriched_af.get("findings", [])
                     if isinstance(sub_findings, list) and sub_findings:
                         max_conf = max(
@@ -132,6 +133,40 @@ def _collect_findings(
                         )
                         if max_conf and "ai_confidence" not in enriched_af:
                             enriched_af["ai_confidence"] = max_conf
+
+                        # Derive severity from highest sub-finding severity
+                        sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+                        worst_sev = "low"
+                        for sf in sub_findings:
+                            if isinstance(sf, dict):
+                                s = sf.get("severity", "low").lower()
+                                if sev_rank.get(s, 99) < sev_rank.get(worst_sev, 99):
+                                    worst_sev = s
+                        enriched_af.setdefault("severity", worst_sev)
+
+                        # Build a title from file path and top sub-finding
+                        file_path = enriched_af.get("file_path", "")
+                        short_path = file_path.replace("/opt/target/", "")
+                        top_pattern = sub_findings[0].get("pattern", "") if sub_findings else ""
+                        enriched_af.setdefault(
+                            "title",
+                            f"AI: {top_pattern} in {short_path}" if top_pattern else f"AI analysis: {short_path}",
+                        )
+
+                        # Build description from reasoning + sub-finding descriptions
+                        desc_parts = []
+                        reasoning = enriched_af.get("reasoning", "")
+                        if reasoning:
+                            desc_parts.append(reasoning)
+                        for sf in sub_findings[:3]:
+                            if isinstance(sf, dict) and sf.get("description"):
+                                desc_parts.append(f"[{sf.get('severity','?').upper()}] {sf['description']}")
+                        enriched_af.setdefault("description", " | ".join(desc_parts) if desc_parts else "AI analysis finding")
+                    else:
+                        enriched_af.setdefault("title", f"AI analysis: {enriched_af.get('file_path', 'unknown')}")
+                        enriched_af.setdefault("severity", "low")
+                        enriched_af.setdefault("description", enriched_af.get("reasoning", "AI analysis finding"))
+
                     findings.append(enriched_af)
 
     return findings
@@ -241,7 +276,8 @@ def _generate_agent_report(
     claude_cmd = (
         'claude -p "$(cat /tmp/synthesis_prompt.txt)" '
         "--allowedTools 'Read,Write,Glob,Grep' "
-        "--output-format text "
+        "--output-format stream-json "
+        "--verbose "
         "--max-turns 15"
     )
 

@@ -7,13 +7,23 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 from threat_scanner.config import ScanConfig
+from threat_scanner.scanners.bandit import run_bandit
+from threat_scanner.scanners.capa_scanner import run_capa
+from threat_scanner.scanners.clamav import run_clamav
+from threat_scanner.scanners.cargo_audit import run_cargo_audit
+from threat_scanner.scanners.checkov import run_checkov
+from threat_scanner.scanners.govulncheck import run_govulncheck
 from threat_scanner.scanners.grype import run_grype
 from threat_scanner.scanners.gitleaks import run_gitleaks
 from threat_scanner.scanners.guarddog import run_guarddog
+from threat_scanner.scanners.hadolint import run_hadolint
 from threat_scanner.scanners.models import Finding, ScanResults
 from threat_scanner.scanners.osv import run_osv
+from threat_scanner.scanners.scancode import run_scancode
 from threat_scanner.scanners.semgrep import run_semgrep
 from threat_scanner.scanners.syft import run_syft
+from threat_scanner.scanners.trivy import run_trivy
+from threat_scanner.scanners.yara_scanner import run_yara
 from threat_scanner.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
@@ -58,6 +68,16 @@ def run_all_scanners(vm_name: str, config: ScanConfig) -> list[ScanResults]:
         ("semgrep", lambda: run_semgrep(vm_name, TARGET_DIR, OUTPUT_DIR)),
         ("guarddog", lambda: run_guarddog(vm_name, TARGET_DIR, OUTPUT_DIR)),
         ("gitleaks", lambda: run_gitleaks(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("bandit", lambda: run_bandit(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("checkov", lambda: run_checkov(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("hadolint", lambda: run_hadolint(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("trivy", lambda: run_trivy(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("yara", lambda: run_yara(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("capa", lambda: run_capa(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("govulncheck", lambda: run_govulncheck(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("cargo-audit", lambda: run_cargo_audit(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("scancode", lambda: run_scancode(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("clamav", lambda: run_clamav(vm_name, TARGET_DIR, OUTPUT_DIR)),
     ]
 
     logger.info("Running %d scanners in parallel...", len(parallel_tasks))
