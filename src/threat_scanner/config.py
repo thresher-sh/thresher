@@ -59,6 +59,7 @@ class ScanConfig:
     anthropic_api_key: str = ""
     oauth_token: str = ""
     model: str = "sonnet"
+    log_dir: str = ""
     tmux: bool = True
 
     @property
@@ -117,6 +118,8 @@ def load_config(
             config.model = data["model"]
         if "output_dir" in data:
             config.output_dir = data["output_dir"]
+        if "log_dir" in data:
+            config.log_dir = data["log_dir"]
         if "tmux" in data:
             config.tmux = data["tmux"]
         vm_data = data.get("vm", {})

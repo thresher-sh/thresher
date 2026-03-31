@@ -12,3 +12,4 @@ venv/
 *.log
 scan-results/
 scanner.toml
+logs/

@@ -15,8 +15,9 @@ import click
 
 from threat_scanner.config import ScanConfig, load_config
 
-LOG_DIR = Path(tempfile.gettempdir()) / "threat-scanner" / "logs"
-LOG_FILE = LOG_DIR / "scan.log"  # symlink to latest, for tmux tail
+_DEFAULT_LOG_DIR = Path(tempfile.gettempdir()) / "threat-scanner" / "logs"
+LOG_DIR: Path = _DEFAULT_LOG_DIR
+LOG_FILE: Path = _DEFAULT_LOG_DIR / "scan.log"  # symlink to latest, for tmux tail
 
 _TMUX_SESSION = "threat-scan"
 _TMUX_ENV_FLAG = "_THREAT_SCAN_IN_TMUX"
@@ -56,8 +57,6 @@ def main(
     no_tmux: bool,
 ) -> None:
     """Scan an open source repository for security threats and supply chain risks."""
-    _setup_logging(verbose)
-
     config = load_config(
         repo_url=repo_url,
         depth=depth,
@@ -68,6 +67,11 @@ def main(
         memory=memory,
         disk=disk,
     )
+
+    import datetime
+    repo_short = repo_url.rstrip("/").rsplit("/", 1)[-1]
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    _setup_logging(verbose, config.log_dir, scan_id=f"{repo_short}-{ts}")
 
     errors = config.validate()
     if errors:
@@ -116,9 +120,19 @@ def _exec_in_tmux(argv: list[str]) -> None:
         # Fall through — just run normally
         return
 
-    # Prepare log file
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_FILE.write_text("")
+    # Ensure log dir and file exist for tmux tail -f.
+    # _setup_logging may have already run; if not, create a placeholder.
+    log_dir = LOG_DIR
+    log_file = log_dir / "scan.log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    if log_file.is_symlink():
+        # Symlink exists from _setup_logging — ensure target exists
+        target = log_file.resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_text("")
+    elif not log_file.exists():
+        log_file.write_text("")
 
     # Kill any previous session
     subprocess.run(
@@ -143,7 +157,7 @@ def _exec_in_tmux(argv: list[str]) -> None:
     # Split right pane for logs (40% width)
     subprocess.run(
         ["tmux", "split-window", "-h", "-t", _TMUX_SESSION, "-p", "40",
-         "tail", "-f", str(LOG_FILE)],
+         "tail", "-F", str(LOG_FILE)],
         check=True,
     )
 
@@ -206,6 +220,9 @@ def run_scan(config: ScanConfig) -> None:
         stop_vm,
     )
 
+    # _SCAN_TIMESTAMP already includes the repo name (e.g. "aegra-20260330-220612")
+    scan_id = _SCAN_TIMESTAMP
+
     using_base = base_exists()
     total_stages = 6 if not config.skip_ai else 4
 
@@ -252,9 +269,9 @@ def run_scan(config: ScanConfig) -> None:
             from threat_scanner.agents.analyst import run_analysis
             from threat_scanner.agents.adversarial import run_adversarial_verification
 
-            ai_findings = run_analysis(vm_name, config, scanner_results)
+            ai_findings = run_analysis(vm_name, config)
             verified_findings = run_adversarial_verification(
-                vm_name, config, ai_findings, scanner_results
+                vm_name, config, ai_findings
             )
         else:
             verified_findings = None
@@ -267,12 +284,8 @@ def run_scan(config: ScanConfig) -> None:
 
         # Retrieve report from VM
         from threat_scanner.vm.ssh import ssh_copy_from
-        import datetime
 
-        # Build timestamped output dir: <output_dir>/<repo-name>-<timestamp>
-        repo_name = config.repo_url.rstrip("/").rsplit("/", 1)[-1]
-        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        output = Path(config.output_dir) / f"{repo_name}-{ts}"
+        output = Path(config.output_dir) / scan_id
         output.mkdir(parents=True, exist_ok=True)
         ssh_copy_from(vm_name, report_path, str(output))
 
@@ -309,8 +322,6 @@ def build(
     Subsequent ``threat-scan`` runs will reuse this image instead of
     provisioning from scratch each time.
     """
-    _setup_logging(verbose)
-
     config = load_config(
         repo_url="",  # not scanning, just building
         skip_ai=True,
@@ -319,6 +330,8 @@ def build(
         memory=memory,
         disk=disk,
     )
+
+    _setup_logging(verbose, config.log_dir)
 
     # Launch under tmux if enabled
     use_tmux = config.tmux and not no_tmux
@@ -340,23 +353,35 @@ def build(
         sys.exit(1)
 
 
-def _setup_logging(verbose: bool) -> None:
+_SCAN_TIMESTAMP: str = ""
+
+
+def _setup_logging(verbose: bool, log_dir: str = "", scan_id: str = "") -> None:
     """Configure logging to file (always) and stderr (if verbose).
 
-    Each run gets its own timestamped log file.  A ``scan.log`` symlink
-    always points to the latest so the tmux pane can ``tail -f`` it.
+    Logs go into ``<log_dir>/<scan_id>/scan.log``. A ``scan.log`` symlink
+    at the log_dir root always points to the latest for tmux ``tail -f``.
     """
+    global LOG_DIR, LOG_FILE, _SCAN_TIMESTAMP
     import datetime
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    if log_dir:
+        LOG_DIR = Path(log_dir)
 
-    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_log = LOG_DIR / f"scan-{ts}.log"
+    _SCAN_TIMESTAMP = scan_id or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = LOG_DIR / _SCAN_TIMESTAMP
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    run_log = run_dir / "scan.log"
     run_log.write_text("")
 
-    # Point the stable symlink at this run's log
+    # Stable symlink at log root for tmux tail -F
+    LOG_FILE = LOG_DIR / "scan.log"
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     LOG_FILE.unlink(missing_ok=True)
-    LOG_FILE.symlink_to(run_log)
+    # Use relative path from symlink's parent dir so it resolves correctly
+    relative_target = run_log.relative_to(LOG_DIR)
+    LOG_FILE.symlink_to(relative_target)
 
     root = logging.getLogger("threat_scanner")
     root.setLevel(logging.DEBUG)

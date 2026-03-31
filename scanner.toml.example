@@ -11,6 +11,9 @@ depth = 2
 # Output directory for reports
 output_dir = "./scan-results"
 
+# Directory for scan logs (each run gets a timestamped file)
+# log_dir = "./logs"
+
 # Launch in tmux split-pane UI (scan + live logs). Set to false to disable.
 tmux = true
 
