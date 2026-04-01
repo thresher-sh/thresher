@@ -10,6 +10,7 @@ VALID_SEVERITIES = frozenset({"critical", "high", "medium", "low", "info"})
 VALID_CATEGORIES = frozenset({
     "sca", "sast", "supply_chain", "secrets",
     "iac", "malware", "binary_analysis", "license",
+    "behavioral", "obfuscation", "metadata", "install_hook",
 })
 
 

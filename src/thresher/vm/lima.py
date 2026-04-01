@@ -20,6 +20,9 @@ _TEMPLATE_PATH = _PROJECT_ROOT / "lima" / "thresher.yaml"
 # Paths to provisioning scripts inside the project.
 _VM_SCRIPTS_DIR = _PROJECT_ROOT / "vm_scripts"
 
+# Path to custom scanner rules.
+_RULES_DIR = _PROJECT_ROOT / "rules"
+
 # Polling settings
 _POLL_INTERVAL = 2  # seconds
 _SSH_TIMEOUT = 120  # seconds
@@ -156,6 +159,18 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
                 str(script),
                 f"/tmp/docker-scanner-deps/scripts/{script.name}",
             )
+
+    # Copy custom scanner rules (Semgrep supply-chain rules, etc.)
+    semgrep_rules_dir = _RULES_DIR / "semgrep"
+    if semgrep_rules_dir.exists():
+        ssh_exec(vm_name, "mkdir -p /opt/rules/semgrep")
+        for rule_file in sorted(semgrep_rules_dir.iterdir()):
+            if rule_file.is_file():
+                ssh_copy_to(
+                    vm_name,
+                    str(rule_file),
+                    f"/opt/rules/semgrep/{rule_file.name}",
+                )
 
     # Copy lockdown scripts (scanner-docker wrapper + lockdown.sh)
     lockdown_script = _VM_SCRIPTS_DIR / "lockdown.sh"

@@ -1,0 +1,268 @@
+rules:
+  # ── Install script hooks ──────────────────────────────────────────
+  - id: supply-chain-install-script-hook
+    patterns:
+      - pattern-either:
+          - pattern: |
+              {"scripts": {"preinstall": $CMD}}
+          - pattern: |
+              {"scripts": {"postinstall": $CMD}}
+          - pattern: |
+              {"scripts": {"preuninstall": $CMD}}
+    message: >
+      Package manifest defines an install hook that invokes a shell command.
+      Install scripts are a common vector for supply-chain attacks.
+    severity: WARNING
+    languages: [json]
+    metadata:
+      category: supply-chain
+
+  # ── Environment variable exfiltration (JavaScript) ────────────────
+  - id: supply-chain-env-exfil-js
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $X = process.env;
+              ...
+              fetch($URL, ...);
+          - pattern: |
+              $X = process.env.$KEY;
+              ...
+              fetch($URL, ...);
+          - pattern: |
+              $X = process.env;
+              ...
+              $HTTP.request(...);
+          - pattern: |
+              $X = process.env.$KEY;
+              ...
+              $HTTP.request(...);
+    message: >
+      Code reads environment variables and sends data over HTTP.
+      This pattern is commonly used for credential exfiltration in
+      supply-chain attacks.
+    severity: ERROR
+    languages: [javascript]
+    metadata:
+      category: supply-chain
+
+  # ── Environment variable exfiltration (Python) ────────────────────
+  - id: supply-chain-env-exfil-py
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $X = os.environ[...]
+              ...
+              requests.post(...)
+          - pattern: |
+              $X = os.environ.get(...)
+              ...
+              requests.post(...)
+          - pattern: |
+              $X = os.environ[...]
+              ...
+              urllib.request.urlopen(...)
+          - pattern: |
+              $X = os.environ.get(...)
+              ...
+              urllib.request.urlopen(...)
+    message: >
+      Code reads environment variables and sends data over HTTP.
+      This pattern is commonly used for credential exfiltration in
+      supply-chain attacks.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: supply-chain
+
+  # ── Download-and-execute (JavaScript) ─────────────────────────────
+  - id: supply-chain-download-exec-js
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $RESP = await fetch($URL);
+              ...
+              eval($RESP. ...);
+          - pattern: |
+              child_process.exec(await fetch($URL). ...);
+          - pattern: |
+              $DATA = await (await fetch($URL)).text();
+              ...
+              eval($DATA);
+          - pattern: |
+              http.get($URL, function($RES) { ... eval(...); ... });
+          - pattern: |
+              https.get($URL, function($RES) { ... eval(...); ... });
+    message: >
+      Code fetches remote content and passes it to eval or child_process.exec.
+      This is a download-and-execute pattern common in supply-chain attacks.
+    severity: ERROR
+    languages: [javascript]
+    metadata:
+      category: supply-chain
+
+  # ── Download-and-execute (Python) ─────────────────────────────────
+  - id: supply-chain-download-exec-py
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $RESP = urllib.request.urlopen($URL)
+              ...
+              exec($RESP. ...)
+          - pattern: |
+              $RESP = requests.get($URL)
+              ...
+              exec($RESP. ...)
+          - pattern: |
+              exec(urllib.request.urlopen($URL).read())
+          - pattern: exec(requests.get($URL).text)
+    message: >
+      Code downloads remote content and passes it to exec().
+      This is a download-and-execute pattern common in supply-chain attacks.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: supply-chain
+
+  # ── Encoded payload execution (JavaScript) ────────────────────────
+  - id: supply-chain-encoded-exec-js
+    patterns:
+      - pattern-either:
+          - pattern: eval(atob($PAYLOAD))
+          - pattern: eval(Buffer.from($PAYLOAD, "base64").toString(...))
+          - pattern: |
+              $DECODED = atob($PAYLOAD);
+              ...
+              eval($DECODED);
+          - pattern: |
+              $DECODED = Buffer.from($PAYLOAD, "base64").toString(...);
+              ...
+              eval($DECODED);
+    message: >
+      Code decodes a base64 payload and passes it to eval.
+      This obfuscation technique is used to hide malicious code.
+    severity: ERROR
+    languages: [javascript]
+    metadata:
+      category: supply-chain
+
+  # ── Encoded payload execution (Python) ────────────────────────────
+  - id: supply-chain-encoded-exec-py
+    patterns:
+      - pattern-either:
+          - pattern: exec(base64.b64decode($PAYLOAD))
+          - pattern: |
+              $DECODED = base64.b64decode($PAYLOAD)
+              ...
+              exec($DECODED)
+          - pattern: exec(base64.b64decode($PAYLOAD).decode(...))
+          - pattern: |
+              $DECODED = base64.b64decode($PAYLOAD).decode(...)
+              ...
+              exec($DECODED)
+    message: >
+      Code decodes a base64 payload and passes it to exec().
+      This obfuscation technique is used to hide malicious code.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: supply-chain
+
+  # ── Filesystem access to sensitive paths (JavaScript) ─────────────
+  - id: supply-chain-sensitive-path-js
+    patterns:
+      - pattern-either:
+          - pattern: fs.readFileSync("$HOME/.ssh/...", ...)
+          - pattern: fs.readFile("$HOME/.ssh/...", ...)
+          - pattern: fs.readFileSync("$HOME/.npmrc", ...)
+          - pattern: fs.readFile("$HOME/.npmrc", ...)
+          - pattern: fs.readFileSync("$HOME/.aws/...", ...)
+          - pattern: fs.readFile("$HOME/.aws/...", ...)
+          - pattern: fs.readFileSync("$HOME/.gnupg/...", ...)
+          - pattern: fs.readFile("$HOME/.gnupg/...", ...)
+      - metavariable-regex:
+          metavariable: $HOME
+          regex: ".*"
+    message: >
+      Code reads sensitive files (SSH keys, npm tokens, AWS credentials, GPG keys).
+      Accessing these paths from a dependency is suspicious.
+    severity: ERROR
+    languages: [javascript]
+    metadata:
+      category: supply-chain
+
+  # ── Filesystem access to sensitive paths (Python) ─────────────────
+  - id: supply-chain-sensitive-path-py
+    patterns:
+      - pattern-either:
+          - pattern: open(os.path.expanduser("~/.ssh/..."), ...)
+          - pattern: open(os.path.expanduser("~/.npmrc"), ...)
+          - pattern: open(os.path.expanduser("~/.aws/..."), ...)
+          - pattern: open(os.path.expanduser("~/.gnupg/..."), ...)
+          - pattern: |
+              pathlib.Path.home() / ".ssh" / ...
+          - pattern: |
+              pathlib.Path.home() / ".aws" / ...
+          - pattern: |
+              pathlib.Path.home() / ".npmrc"
+    message: >
+      Code reads sensitive files (SSH keys, npm tokens, AWS credentials, GPG keys).
+      Accessing these paths from a dependency is suspicious.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: supply-chain
+
+  # ── Process spawning from data handlers (JavaScript) ──────────────
+  - id: supply-chain-data-handler-exec-js
+    patterns:
+      - pattern-either:
+          - pattern: |
+              JSON.parse($DATA, function(...) { ... child_process.exec(...); ... })
+          - pattern: |
+              $PARSED = JSON.parse($DATA);
+              ...
+              child_process.exec($PARSED. ...);
+          - pattern: |
+              $PARSED = JSON.parse($DATA);
+              ...
+              require("child_process").exec($PARSED. ...);
+    message: >
+      Code spawns a child process from a JSON parse callback or parsed data.
+      Executing commands derived from parsed data is a supply-chain risk.
+    severity: ERROR
+    languages: [javascript]
+    metadata:
+      category: supply-chain
+
+  # ── Dynamic require/import (JavaScript) ───────────────────────────
+  - id: supply-chain-dynamic-require-js
+    patterns:
+      - pattern-either:
+          - pattern: require($VAR)
+          - pattern: import($VAR)
+      - pattern-not: require("...")
+      - pattern-not: import("...")
+    message: >
+      Non-literal module loading detected. Dynamic require/import can be used
+      to load arbitrary code at runtime, hiding malicious dependencies.
+    severity: WARNING
+    languages: [javascript]
+    metadata:
+      category: supply-chain
+
+  # ── Dynamic import (Python) ──────────────────────────────────────
+  - id: supply-chain-dynamic-import-py
+    patterns:
+      - pattern-either:
+          - pattern: __import__($VAR)
+          - pattern: importlib.import_module($VAR)
+      - pattern-not: __import__("...")
+      - pattern-not: importlib.import_module("...")
+    message: >
+      Non-literal module loading detected. Dynamic imports can be used
+      to load arbitrary code at runtime, hiding malicious dependencies.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      category: supply-chain

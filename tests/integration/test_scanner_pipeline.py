@@ -22,6 +22,12 @@ def _load(name: str) -> str:
 
 
 class TestRunAllScanners:
+    @patch("thresher.scanners.entropy.ssh_write_file")
+    @patch("thresher.scanners.entropy.ssh_exec")
+    @patch("thresher.scanners.install_hooks.ssh_write_file")
+    @patch("thresher.scanners.install_hooks.ssh_exec")
+    @patch("thresher.scanners.guarddog_deps.ssh_exec")
+    @patch("thresher.scanners.semgrep_supply_chain.ssh_exec")
     @patch("thresher.scanners.clamav.ssh_exec")
     @patch("thresher.scanners.scancode.ssh_exec")
     @patch("thresher.scanners.cargo_audit.ssh_exec")
@@ -44,6 +50,9 @@ class TestRunAllScanners:
         mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
         mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
         mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
+        mock_semgrep_sc, mock_guarddog_deps,
+        mock_install_hooks_exec, mock_install_hooks_write,
+        mock_entropy_exec, mock_entropy_write,
     ):
         # Runner's mkdir call
         mock_runner_ssh.return_value = SSHResult("", "", 0)
@@ -75,16 +84,25 @@ class TestRunAllScanners:
         mock_scancode.return_value = SSHResult("", "", 0)
         mock_clamav.return_value = SSHResult("", "", 0)
 
+        # New scanners
+        mock_semgrep_sc.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps.return_value = SSHResult("", "", 0)
+        mock_install_hooks_exec.return_value = SSHResult("", "", 0)
+        mock_install_hooks_write.return_value = None
+        mock_entropy_exec.return_value = SSHResult("", "", 0)
+        mock_entropy_write.return_value = None
+
         results = run_all_scanners("test-vm", _make_config())
 
-        # Should have 16 results (syft + 15 parallel)
-        assert len(results) == 16
+        # Should have 20 results (syft + 19 parallel)
+        assert len(results) == 20
 
         tool_names = {r.tool_name for r in results}
         assert tool_names == {
             "syft", "grype", "osv-scanner", "semgrep", "guarddog", "gitleaks",
             "bandit", "checkov", "hadolint", "trivy", "yara", "capa",
             "govulncheck", "cargo-audit", "scancode", "clamav",
+            "semgrep-supply-chain", "guarddog-deps", "install-hooks", "entropy",
         }
 
         # Findings stay in VM — host-side ScanResults have empty findings
@@ -96,6 +114,12 @@ class TestRunAllScanners:
         assert len(gitleaks_result.findings) == 0
         assert gitleaks_result.raw_output_path == "/opt/scan-results/gitleaks.json"
 
+    @patch("thresher.scanners.entropy.ssh_write_file")
+    @patch("thresher.scanners.entropy.ssh_exec")
+    @patch("thresher.scanners.install_hooks.ssh_write_file")
+    @patch("thresher.scanners.install_hooks.ssh_exec")
+    @patch("thresher.scanners.guarddog_deps.ssh_exec")
+    @patch("thresher.scanners.semgrep_supply_chain.ssh_exec")
     @patch("thresher.scanners.clamav.ssh_exec")
     @patch("thresher.scanners.scancode.ssh_exec")
     @patch("thresher.scanners.cargo_audit.ssh_exec")
@@ -118,6 +142,9 @@ class TestRunAllScanners:
         mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
         mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
         mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
+        mock_semgrep_sc, mock_guarddog_deps,
+        mock_install_hooks_exec, mock_install_hooks_write,
+        mock_entropy_exec, mock_entropy_write,
     ):
         mock_runner_ssh.return_value = SSHResult("", "", 0)
         mock_syft.return_value = SSHResult("", "", 0)
@@ -142,16 +169,30 @@ class TestRunAllScanners:
         mock_scancode.return_value = SSHResult("", "", 0)
         mock_clamav.return_value = SSHResult("", "", 0)
 
+        # New scanners
+        mock_semgrep_sc.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps.return_value = SSHResult("", "", 0)
+        mock_install_hooks_exec.return_value = SSHResult("", "", 0)
+        mock_install_hooks_write.return_value = None
+        mock_entropy_exec.return_value = SSHResult("", "", 0)
+        mock_entropy_write.return_value = None
+
         results = run_all_scanners("test-vm", _make_config())
 
-        # All 16 should still be present
-        assert len(results) == 16
+        # All 20 should still be present
+        assert len(results) == 20
 
         # Grype should have an error entry
         grype = [r for r in results if r.tool_name == "grype"][0]
         assert grype.exit_code == -1
         assert len(grype.errors) > 0
 
+    @patch("thresher.scanners.entropy.ssh_write_file")
+    @patch("thresher.scanners.entropy.ssh_exec")
+    @patch("thresher.scanners.install_hooks.ssh_write_file")
+    @patch("thresher.scanners.install_hooks.ssh_exec")
+    @patch("thresher.scanners.guarddog_deps.ssh_exec")
+    @patch("thresher.scanners.semgrep_supply_chain.ssh_exec")
     @patch("thresher.scanners.clamav.ssh_exec")
     @patch("thresher.scanners.scancode.ssh_exec")
     @patch("thresher.scanners.cargo_audit.ssh_exec")
@@ -174,6 +215,9 @@ class TestRunAllScanners:
         mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
         mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
         mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
+        mock_semgrep_sc, mock_guarddog_deps,
+        mock_install_hooks_exec, mock_install_hooks_write,
+        mock_entropy_exec, mock_entropy_write,
     ):
         """Exit code 1 from Grype/OSV/Gitleaks means findings found, not error."""
         mock_runner_ssh.return_value = SSHResult("", "", 0)
@@ -196,6 +240,14 @@ class TestRunAllScanners:
         mock_cargo_audit.return_value = SSHResult("", "", 0)
         mock_scancode.return_value = SSHResult("", "", 0)
         mock_clamav.return_value = SSHResult("", "", 0)
+
+        # New scanners
+        mock_semgrep_sc.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps.return_value = SSHResult("", "", 0)
+        mock_install_hooks_exec.return_value = SSHResult("", "", 0)
+        mock_install_hooks_write.return_value = None
+        mock_entropy_exec.return_value = SSHResult("", "", 0)
+        mock_entropy_write.return_value = None
 
         results = run_all_scanners("test-vm", _make_config())
 

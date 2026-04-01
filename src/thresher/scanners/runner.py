@@ -12,15 +12,19 @@ from thresher.scanners.capa_scanner import run_capa
 from thresher.scanners.clamav import run_clamav
 from thresher.scanners.cargo_audit import run_cargo_audit
 from thresher.scanners.checkov import run_checkov
+from thresher.scanners.entropy import run_entropy
 from thresher.scanners.govulncheck import run_govulncheck
 from thresher.scanners.grype import run_grype
 from thresher.scanners.gitleaks import run_gitleaks
 from thresher.scanners.guarddog import run_guarddog
+from thresher.scanners.guarddog_deps import run_guarddog_deps
 from thresher.scanners.hadolint import run_hadolint
+from thresher.scanners.install_hooks import run_install_hooks
 from thresher.scanners.models import Finding, ScanResults
 from thresher.scanners.osv import run_osv
 from thresher.scanners.scancode import run_scancode
 from thresher.scanners.semgrep import run_semgrep
+from thresher.scanners.semgrep_supply_chain import run_semgrep_supply_chain
 from thresher.scanners.syft import run_syft
 from thresher.scanners.trivy import run_trivy
 from thresher.scanners.yara_scanner import run_yara
@@ -83,6 +87,10 @@ def run_all_scanners(vm_name: str, config: ScanConfig) -> list[ScanResults]:
         ("cargo-audit", lambda: run_cargo_audit(vm_name, TARGET_DIR, OUTPUT_DIR)),
         ("scancode", lambda: run_scancode(vm_name, TARGET_DIR, OUTPUT_DIR)),
         ("clamav", lambda: run_clamav(vm_name, TARGET_DIR, OUTPUT_DIR)),
+        ("semgrep-supply-chain", lambda: run_semgrep_supply_chain(vm_name, OUTPUT_DIR)),
+        ("guarddog-deps", lambda: run_guarddog_deps(vm_name, OUTPUT_DIR)),
+        ("install-hooks", lambda: run_install_hooks(vm_name, OUTPUT_DIR)),
+        ("entropy", lambda: run_entropy(vm_name, OUTPUT_DIR)),
     ]
 
     logger.info("Running %d scanners in parallel...", len(parallel_tasks))
