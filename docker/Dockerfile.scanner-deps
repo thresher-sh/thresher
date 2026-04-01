@@ -1,0 +1,19 @@
+# Dockerfile.scanner-deps — Multi-ecosystem dependency resolution container.
+# Built once during provisioning (threat-scan-build). Contains all ecosystem
+# tooling. At scan time, invoked via the scanner-docker wrapper with no args.
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv \
+    nodejs npm \
+    cargo \
+    golang-go \
+    git \
+    jq \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/ /scripts/
+RUN chmod +x /scripts/*.sh
+
+ENTRYPOINT ["/scripts/run.sh"]

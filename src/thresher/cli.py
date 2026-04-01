@@ -45,6 +45,7 @@ def print_success(message: str) -> None:
 @click.option("--memory", type=int, default=None, help="VM memory in GB (default: 8)")
 @click.option("--disk", type=int, default=None, help="VM disk in GB (default: 50)")
 @click.option("--no-tmux", is_flag=True, help="Disable tmux split-pane UI")
+@click.option("--high-risk-dep", is_flag=True, help="Download high-risk hidden dependencies (binaries, tarballs)")
 def main(
     repo_url: str,
     depth: int | None,
@@ -55,6 +56,7 @@ def main(
     memory: int | None,
     disk: int | None,
     no_tmux: bool,
+    high_risk_dep: bool,
 ) -> None:
     """Scan an open source repository for security threats and supply chain risks."""
     config = load_config(
@@ -66,6 +68,7 @@ def main(
         cpus=cpus,
         memory=memory,
         disk=disk,
+        high_risk_dep=high_risk_dep,
     )
 
     import datetime
@@ -241,8 +244,8 @@ def run_scan(config: ScanConfig) -> None:
             print_stage(2, total_stages, "Provisioning VM (installing scanners)...")
             provision_vm(vm_name, config)
 
-        # Stage 3: Clone repo and download dependencies
-        print_stage(3, total_stages, "Cloning repo and downloading dependencies...")
+        # Stage 3: Clone repo
+        print_stage(3, total_stages, "Cloning repository (hardened)...")
         from thresher.vm.ssh import ssh_exec
         from thresher.docker.sandbox import download_dependencies
 
@@ -254,37 +257,37 @@ def run_scan(config: ScanConfig) -> None:
         )
         if rc != 0:
             raise RuntimeError(f"git clone failed (exit {rc}): {stderr}")
+
+        # Stage 3b: Pre-dep discovery (AI agent finds hidden dependency sources)
+        if not config.skip_ai:
+            from thresher.agents.predep import run_predep_discovery
+            print_stage(3, total_stages, "Discovering hidden dependency sources...")
+            run_predep_discovery(vm_name, config)
+
+        # Stage 3c: Resolve all dependencies (standard + hidden)
+        print_stage(3, total_stages, "Downloading dependencies...")
         download_dependencies(vm_name, config)
 
-        # Stage 4: Run deterministic scanners
+        # Stage 4: Run deterministic scanners (results stay in VM at /opt/scan-results/)
         print_stage(4, total_stages, "Running deterministic scanners...")
         from thresher.scanners.runner import run_all_scanners
 
-        scanner_results_raw = run_all_scanners(vm_name, config)
-        # Convert list[ScanResults] to dict[str, list[dict]] for downstream consumers
-        scanner_results = {
-            sr.tool_name: [f.to_dict() for f in sr.findings]
-            for sr in scanner_results_raw
-        }
+        scanner_status = run_all_scanners(vm_name, config)
 
         if not config.skip_ai:
-            # Stage 5: AI analysis
+            # Stage 5: AI analysis (findings stay in VM)
             print_stage(5, total_stages, "Running AI analysis agents...")
             from thresher.agents.analyst import run_analysis
             from thresher.agents.adversarial import run_adversarial_verification
 
-            ai_findings = run_analysis(vm_name, config)
-            verified_findings = run_adversarial_verification(
-                vm_name, config, ai_findings
-            )
-        else:
-            verified_findings = None
+            run_analysis(vm_name, config)
+            run_adversarial_verification(vm_name, config)
 
-        # Final stage: Generate report
+        # Final stage: Generate report (reads all data from within VM)
         print_stage(total_stages, total_stages, "Generating report...")
         from thresher.report.synthesize import generate_report
 
-        report_path = generate_report(vm_name, config, scanner_results, verified_findings)
+        report_path = generate_report(vm_name, config)
 
         # Retrieve report from VM (validated copy — treats VM as untrusted)
         from thresher.vm.safe_io import ssh_copy_from_safe, validate_report_structure

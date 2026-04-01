@@ -55,24 +55,12 @@ def run_yara(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
         result = ssh_exec(vm_name, cmd, timeout=600)
         elapsed = time.monotonic() - start
 
-        cat_result = ssh_exec(vm_name, f"cat {output_path}")
-        raw_text = cat_result.stdout.strip()
-
-        if not raw_text:
-            return ScanResults(
-                tool_name="yara",
-                execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                findings=[],
-                raw_output_path=output_path,
-            )
-
-        findings = parse_yara_output(raw_text)
+        # Findings remain inside the VM at output_path.
+        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="yara",
             execution_time_seconds=elapsed,
             exit_code=result.exit_code,
-            findings=findings,
             raw_output_path=output_path,
         )
 

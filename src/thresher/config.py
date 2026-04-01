@@ -61,6 +61,7 @@ class ScanConfig:
     model: str = "sonnet"
     log_dir: str = ""
     tmux: bool = True
+    high_risk_dep: bool = False
 
     @property
     def has_ai_credentials(self) -> bool:
@@ -103,6 +104,7 @@ def load_config(
     memory: int | None = None,
     disk: int | None = None,
     config_path: Path | None = None,
+    high_risk_dep: bool = False,
 ) -> ScanConfig:
     """Build ScanConfig from config file + CLI args + env vars. CLI args take precedence."""
     config = ScanConfig()
@@ -136,6 +138,7 @@ def load_config(
         config.depth = depth
     config.skip_ai = skip_ai
     config.verbose = verbose
+    config.high_risk_dep = high_risk_dep
     if output_dir is not None:
         config.output_dir = output_dir
     if cpus is not None:

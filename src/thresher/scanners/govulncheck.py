@@ -57,13 +57,12 @@ def run_govulncheck(vm_name: str, target_dir: str, output_dir: str) -> ScanResul
                 errors=[f"govulncheck failed (exit {result.exit_code}): {result.stderr}"],
             )
 
-        cat_result = ssh_exec(vm_name, f"cat {output_path}")
-        findings = parse_govulncheck_output(cat_result.stdout)
+        # Findings remain inside the VM at output_path.
+        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="govulncheck",
             execution_time_seconds=elapsed,
             exit_code=result.exit_code,
-            findings=findings,
             raw_output_path=output_path,
         )
 

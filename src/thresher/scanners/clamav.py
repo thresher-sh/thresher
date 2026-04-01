@@ -38,23 +38,12 @@ def run_clamav(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
                 errors=[f"ClamAV error (exit 2): {result.stderr}"],
             )
 
-        if result.exit_code == 0:
-            return ScanResults(
-                tool_name="clamav",
-                execution_time_seconds=elapsed,
-                exit_code=0,
-                findings=[],
-                raw_output_path=output_path,
-            )
-
-        # Exit 1 = infections found. Parse output.
-        cat_result = ssh_exec(vm_name, f"cat {output_path}")
-        findings = _parse_clamav_output(cat_result.stdout)
+        # Findings remain inside the VM at output_path.
+        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="clamav",
             execution_time_seconds=elapsed,
             exit_code=result.exit_code,
-            findings=findings,
             raw_output_path=output_path,
         )
 

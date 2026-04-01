@@ -7,7 +7,6 @@ import time
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.safe_io import safe_json_loads
 from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
@@ -57,8 +56,7 @@ def run_capa(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
                 findings=[],
             )
 
-        # Run capa on each binary and collect all findings.
-        all_findings: list[Finding] = []
+        # Run capa on each binary — results stay in VM.
         last_exit_code = 0
 
         for binary_path in binaries:
@@ -70,21 +68,14 @@ def run_capa(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
 
             if result.exit_code != 0:
                 logger.debug("capa exited with code %d for %s", result.exit_code, binary_path)
-                continue
-
-            cat_result = ssh_exec(vm_name, f"cat {binary_output}")
-            raw = safe_json_loads(cat_result.stdout, source="capa output")
-            if raw is None:
-                continue
-
-            all_findings.extend(parse_capa_output(raw, binary_path))
 
         elapsed = time.monotonic() - start
+        # Findings remain inside the VM at output_path.
+        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="capa",
             execution_time_seconds=elapsed,
             exit_code=last_exit_code,
-            findings=all_findings,
             raw_output_path=output_path,
         )
 

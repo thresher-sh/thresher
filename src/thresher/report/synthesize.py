@@ -11,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from thresher.config import ScanConfig
 from thresher.report.scoring import enrich_findings
+from thresher.vm.safe_io import safe_json_loads
 from thresher.vm.ssh import ssh_exec, ssh_write_file
 
 logger = logging.getLogger(__name__)
@@ -26,13 +27,130 @@ SBOM_PATH = "/opt/scan-results/sbom.json"
 PRIORITY_ORDER = ["P0", "critical", "high", "medium", "low"]
 
 
+def _read_all_scanner_findings_from_vm(vm_name: str) -> dict[str, list[dict[str, Any]]]:
+    """Read all scanner JSON output files from /opt/scan-results/ inside the VM.
+
+    Returns a dict mapping tool name to a list of raw finding dicts.
+    This is the ONLY place where scanner data crosses the VM boundary
+    for enrichment purposes.  The data is written back immediately.
+    """
+    scanner_files = {
+        "grype": "grype.json",
+        "osv-scanner": "osv.json",
+        "semgrep": "semgrep.json",
+        "guarddog": "guarddog.json",
+        "gitleaks": "gitleaks.json",
+        "bandit": "bandit.json",
+        "checkov": "checkov.json",
+        "hadolint": "hadolint.json",
+        "trivy": "trivy.json",
+        "cargo-audit": "cargo-audit.json",
+        "scancode": "scancode.json",
+    }
+
+    results: dict[str, list[dict[str, Any]]] = {}
+    for tool_name, filename in scanner_files.items():
+        path = f"{SCAN_RESULTS_DIR}/{filename}"
+        try:
+            cat_result = ssh_exec(vm_name, f"cat {path} 2>/dev/null")
+            if cat_result.exit_code != 0:
+                continue
+            raw = safe_json_loads(cat_result.stdout, source=filename)
+            if raw is None:
+                continue
+            # Import parse functions lazily to normalize findings
+            findings = _normalize_scanner_output(tool_name, raw)
+            if findings:
+                results[tool_name] = findings
+        except Exception:
+            logger.debug("Could not read %s from VM", path)
+
+    return results
+
+
+def _normalize_scanner_output(
+    tool_name: str, raw: Any
+) -> list[dict[str, Any]]:
+    """Normalize raw scanner JSON into a flat list of finding dicts.
+
+    Uses the existing parse functions in each scanner module to produce
+    Finding objects, then serializes them to dicts.
+    """
+    try:
+        if tool_name == "grype":
+            from thresher.scanners.grype import parse_grype_output
+            return [f.to_dict() for f in parse_grype_output(raw)]
+        elif tool_name == "osv-scanner":
+            from thresher.scanners.osv import parse_osv_output
+            return [f.to_dict() for f in parse_osv_output(raw)]
+        elif tool_name == "semgrep":
+            from thresher.scanners.semgrep import parse_semgrep_output
+            return [f.to_dict() for f in parse_semgrep_output(raw)]
+        elif tool_name == "guarddog":
+            from thresher.scanners.guarddog import parse_guarddog_output
+            return [f.to_dict() for f in parse_guarddog_output(raw)]
+        elif tool_name == "gitleaks":
+            from thresher.scanners.gitleaks import parse_gitleaks_output
+            return [f.to_dict() for f in parse_gitleaks_output(raw)]
+        elif tool_name == "bandit":
+            from thresher.scanners.bandit import parse_bandit_output
+            return [f.to_dict() for f in parse_bandit_output(raw)]
+        elif tool_name == "checkov":
+            from thresher.scanners.checkov import parse_checkov_output
+            return [f.to_dict() for f in parse_checkov_output(raw)]
+        elif tool_name == "hadolint":
+            from thresher.scanners.hadolint import parse_hadolint_output
+            return [f.to_dict() for f in parse_hadolint_output(raw)]
+        elif tool_name == "trivy":
+            from thresher.scanners.trivy import parse_trivy_output
+            return [f.to_dict() for f in parse_trivy_output(raw)]
+        elif tool_name == "cargo-audit":
+            from thresher.scanners.cargo_audit import parse_cargo_audit_output
+            return [f.to_dict() for f in parse_cargo_audit_output(raw)]
+        elif tool_name == "scancode":
+            from thresher.scanners.scancode import parse_scancode_output
+            return [f.to_dict() for f in parse_scancode_output(raw)]
+        else:
+            # Unknown tool — return raw if it looks like a findings list
+            if isinstance(raw, list):
+                return raw
+            return []
+    except Exception:
+        logger.debug("Failed to parse %s output", tool_name, exc_info=True)
+        return []
+
+
+def _read_ai_findings_from_vm(vm_name: str) -> dict[str, Any] | None:
+    """Read the adversarial-verified (or analyst) findings from the VM.
+
+    Prefers adversarial-findings.json (merged results) if available,
+    falls back to analyst-findings.json.
+    """
+    for path in [
+        f"{SCAN_RESULTS_DIR}/adversarial-findings.json",
+        f"{SCAN_RESULTS_DIR}/analyst-findings.json",
+    ]:
+        try:
+            result = ssh_exec(vm_name, f"cat {path} 2>/dev/null")
+            if result.exit_code != 0:
+                continue
+            parsed = safe_json_loads(result.stdout, source=path)
+            if parsed is not None:
+                return parsed
+        except Exception:
+            continue
+    return None
+
+
 def generate_report(
     vm_name: str,
     config: ScanConfig,
-    scanner_results: Any,
-    ai_findings: dict[str, Any] | None,
 ) -> str:
     """Generate the full security report inside the VM.
+
+    All scan data is read from /opt/scan-results/ within the VM.  No
+    scanner findings or AI analysis data is passed from the host.
+    This preserves the VM trust boundary.
 
     Creates a timestamped report directory, enriches findings with EPSS/KEV
     data, and either invokes the Claude synthesis agent (default) or falls
@@ -41,9 +159,6 @@ def generate_report(
     Args:
         vm_name: Lima VM name for SSH execution.
         config: Scan configuration.
-        scanner_results: Aggregated scanner output (normalized findings).
-        ai_findings: AI analysis + adversarial verification results,
-                     or None if --skip-ai was used.
 
     Returns:
         Path to the report directory inside the VM.
@@ -53,6 +168,10 @@ def generate_report(
 
     # Create report directory structure inside the VM
     ssh_exec(vm_name, f"mkdir -p {report_dir}/scan-results")
+
+    # Read all findings from the VM
+    scanner_results = _read_all_scanner_findings_from_vm(vm_name)
+    ai_findings = None if config.skip_ai else _read_ai_findings_from_vm(vm_name)
 
     # Gather all findings into a flat list
     all_findings = _collect_findings(scanner_results, ai_findings)
@@ -80,6 +199,9 @@ def generate_report(
 
     if config.skip_ai:
         # Fallback: use Jinja2 templates for report generation
+        # NOTE: Template rendering happens on the host but the data flow is
+        # host -> VM (writing rendered output back).  This is acceptable for
+        # the --skip-ai fallback path since templates are host-authored.
         _generate_template_report(vm_name, config, enriched, scanner_results, report_dir)
     else:
         # Agent-driven synthesis via Claude Code headless

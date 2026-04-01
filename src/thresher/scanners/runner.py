@@ -35,16 +35,21 @@ OUTPUT_DIR = "/opt/scan-results"
 def run_all_scanners(vm_name: str, config: ScanConfig) -> list[ScanResults]:
     """Run all configured scanners against the target repo inside the VM.
 
+    Scanner findings remain inside the VM at /opt/scan-results/.  Only
+    execution metadata (tool name, exit code, timing, errors) is returned
+    to the host.  This preserves the VM trust boundary -- no scan data
+    crosses until the final report copy.
+
     Execution order:
       1. Syft runs first to produce the SBOM (required by Grype).
-      2. Grype, OSV-Scanner, Semgrep, GuardDog, and Gitleaks run in parallel.
+      2. All other scanners run in parallel.
 
     Args:
         vm_name: Name of the Lima VM containing the cloned repository.
         config: Scan configuration.
 
     Returns:
-        List of ScanResults from each scanner.
+        List of ScanResults with execution metadata only (no findings).
     """
     # Ensure the output directory exists inside the VM.
     ssh_exec(vm_name, f"mkdir -p {OUTPUT_DIR}")
@@ -94,10 +99,9 @@ def run_all_scanners(vm_name: str, config: ScanConfig) -> list[ScanResults]:
                 result = future.result()
                 all_results.append(result)
                 logger.info(
-                    "Scanner %s completed (exit=%d, findings=%d, errors=%d)",
+                    "Scanner %s completed (exit=%d, errors=%d)",
                     name,
                     result.exit_code,
-                    len(result.findings),
                     len(result.errors),
                 )
             except Exception as exc:

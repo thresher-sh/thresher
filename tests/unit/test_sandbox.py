@@ -1,118 +1,68 @@
-"""Tests for thresher.docker.sandbox."""
+"""Tests for thresher.docker.sandbox (containerized dependency resolution)."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-from thresher.docker.sandbox import (
-    ECOSYSTEM_IMAGES,
-    ECOSYSTEM_INDICATORS,
-    _parse_package_name,
-    detect_ecosystems,
-)
+import pytest
+
+from thresher.docker.sandbox import download_dependencies
+from thresher.config import ScanConfig, VMConfig
 from thresher.vm.ssh import SSHResult
 
 
-# sandbox.py imports ssh_exec locally inside functions via
-# "from thresher.vm.ssh import ssh_exec", so we patch the
-# canonical location in the ssh module.
 SSH_EXEC_PATH = "thresher.vm.ssh.ssh_exec"
 
 
-class TestDetectEcosystems:
-    @patch(SSH_EXEC_PATH)
-    def test_python(self, mock_exec):
-        mock_exec.return_value = SSHResult("python\n", "", 0)
-        result = detect_ecosystems("vm", "/opt/target")
-        assert result == ["python"]
+@pytest.fixture
+def config():
+    return ScanConfig(
+        repo_url="https://github.com/example/repo",
+        skip_ai=True,
+        vm=VMConfig(cpus=4, memory=8, disk=50),
+    )
 
-    @patch(SSH_EXEC_PATH)
-    def test_node(self, mock_exec):
-        mock_exec.return_value = SSHResult("node\n", "", 0)
-        result = detect_ecosystems("vm", "/opt/target")
-        assert result == ["node"]
 
+class TestDownloadDependencies:
     @patch(SSH_EXEC_PATH)
-    def test_multi_ecosystem(self, mock_exec):
-        mock_exec.return_value = SSHResult("python\nnode\nrust\n", "", 0)
-        result = detect_ecosystems("vm", "/opt/target")
-        assert result == ["node", "python", "rust"]
-
-    @patch(SSH_EXEC_PATH)
-    def test_no_ecosystems(self, mock_exec):
+    def test_invokes_scanner_docker_wrapper(self, mock_exec, config):
         mock_exec.return_value = SSHResult("", "", 0)
-        result = detect_ecosystems("vm", "/opt/target")
-        assert result == []
+
+        download_dependencies("test-vm", config)
+
+        cmds = [c[0][1] for c in mock_exec.call_args_list]
+        assert any("sudo /usr/local/bin/scanner-docker" in cmd for cmd in cmds)
 
     @patch(SSH_EXEC_PATH)
-    def test_deduplication(self, mock_exec):
-        mock_exec.return_value = SSHResult("python\npython\npython\n", "", 0)
-        result = detect_ecosystems("vm", "/opt/target")
-        assert result == ["python"]
-
-
-class TestParsePackageName:
-    def test_python_tar_gz(self):
-        name, ver = _parse_package_name("requests-2.31.0.tar.gz", "python")
-        assert name == "requests"
-        assert ver == "2.31.0"
-
-    def test_python_zip(self):
-        name, ver = _parse_package_name("foo-1.0.zip", "python")
-        assert name == "foo"
-        assert ver == "1.0"
-
-    def test_python_no_version(self):
-        name, ver = _parse_package_name("somepkg.tar.gz", "python")
-        assert name == "somepkg"
-        assert ver == "unknown"
-
-    def test_node_tgz(self):
-        name, ver = _parse_package_name("express-4.18.2.tgz", "node")
-        assert name == "express"
-        assert ver == "4.18.2"
-
-    def test_node_no_version(self):
-        name, ver = _parse_package_name("lodash.tgz", "node")
-        assert name == "lodash"
-        assert ver == "unknown"
-
-    def test_rust_dir_with_version(self):
-        name, ver = _parse_package_name("serde-1.0.193", "rust")
-        assert name == "serde"
-        assert ver == "1.0.193"
-
-    def test_rust_dir_no_version(self):
-        name, ver = _parse_package_name("serde", "rust")
-        assert name == "serde"
-        assert ver == "unknown"
-
-    def test_go_dir(self):
-        name, ver = _parse_package_name("modules", "go")
-        assert name == "modules"
-        assert ver == "unknown"
-
-    def test_unknown_ecosystem(self):
-        name, ver = _parse_package_name("anything", "unknown_eco")
-        assert name == "anything"
-        assert ver == "unknown"
-
-
-class TestDockerRunUsesSudo:
-    @patch(SSH_EXEC_PATH)
-    def test_sudo_in_command(self, mock_exec):
+    def test_copies_deps_to_opt_deps(self, mock_exec, config):
         mock_exec.return_value = SSHResult("", "", 0)
-        from thresher.docker.sandbox import _docker_run
 
-        _docker_run("vm", "python:3.12", "echo hi", [], network=True)
-        cmd = mock_exec.call_args[0][1]
-        assert cmd.startswith("sudo docker run")
+        download_dependencies("test-vm", config)
+
+        cmds = [c[0][1] for c in mock_exec.call_args_list]
+        assert any("/opt/deps/" in cmd for cmd in cmds)
 
     @patch(SSH_EXEC_PATH)
-    def test_network_none(self, mock_exec):
-        mock_exec.return_value = SSHResult("", "", 0)
-        from thresher.docker.sandbox import _docker_run
+    def test_raises_on_container_failure(self, mock_exec, config):
+        mock_exec.side_effect = [
+            SSHResult("", "", 0),  # mkdir + cp
+            SSHResult("", "container error", 1),  # scanner-docker fails
+        ]
 
-        _docker_run("vm", "python:3.12", "echo hi", [], network=False)
-        cmd = mock_exec.call_args[0][1]
-        assert "--network=none" in cmd
+        with pytest.raises(RuntimeError, match="Dependency resolution failed"):
+            download_dependencies("test-vm", config)
+
+    @patch(SSH_EXEC_PATH)
+    def test_no_data_leaves_vm(self, mock_exec, config):
+        """Verify that no VM data is parsed on the host side."""
+        mock_exec.return_value = SSHResult("", "", 0)
+
+        download_dependencies("test-vm", config)
+
+        # download_dependencies returns None — nothing read from VM
+        # All commands are ssh_exec (running commands IN the VM),
+        # no ssh_copy_from calls
+        for call in mock_exec.call_args_list:
+            cmd = call[0][1]
+            # Should never cat files to read them on the host
+            assert "cat " not in cmd or "2>/dev/null" in cmd

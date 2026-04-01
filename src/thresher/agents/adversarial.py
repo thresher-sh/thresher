@@ -14,6 +14,7 @@ from typing import Any
 
 from thresher.agents.prompts import ADVERSARIAL_SYSTEM_PROMPT
 from thresher.config import ScanConfig
+from thresher.vm.safe_io import safe_json_loads
 from thresher.vm.ssh import ssh_exec, ssh_write_file
 
 logger = logging.getLogger(__name__)
@@ -245,26 +246,46 @@ def _merge_adversarial_results(
     return updated_findings
 
 
+def _read_analyst_findings_from_vm(vm_name: str) -> dict[str, Any]:
+    """Read the analyst findings JSON from within the VM.
+
+    Returns the parsed findings dict, or an empty findings structure
+    if the file cannot be read or parsed.
+    """
+    try:
+        result = ssh_exec(vm_name, "cat /opt/scan-results/analyst-findings.json")
+        if result.exit_code != 0:
+            logger.warning("Could not read analyst findings from VM")
+            return {"findings": []}
+        parsed = safe_json_loads(result.stdout, source="analyst-findings.json")
+        if parsed is None:
+            return {"findings": []}
+        return parsed
+    except Exception:
+        logger.warning("Failed to read analyst findings from VM", exc_info=True)
+        return {"findings": []}
+
+
 def run_adversarial_verification(
     vm_name: str,
     config: ScanConfig,
-    ai_findings: dict[str, Any],
-) -> dict[str, Any]:
+) -> None:
     """Run the adversarial verification agent.
 
-    Filters AI findings to high-risk (score >= 4), invokes Claude Code
-    headless to attempt benign explanations, and merges results back.
+    Reads analyst findings from /opt/scan-results/analyst-findings.json
+    inside the VM, filters to high-risk (score >= 4), invokes Claude Code
+    headless to attempt benign explanations, and writes merged results
+    back to the VM.
 
-    Has NO access to scanner results — only verifies the AI researcher's findings.
+    No structured findings data is returned to the host.
+
+    Has NO access to scanner results -- only verifies the AI researcher's findings.
 
     Args:
         vm_name: Name of the Lima VM.
         config: Scan configuration.
-        ai_findings: Structured output from the analyst agent.
-
-    Returns:
-        Updated findings dict with adversarial verification status merged in.
     """
+    ai_findings = _read_analyst_findings_from_vm(vm_name)
     high_risk = _extract_high_risk(ai_findings)
 
     if not high_risk:
@@ -282,7 +303,7 @@ def run_adversarial_verification(
             ssh_write_file(vm_name, md, "/opt/scan-results/adversarial-findings.md")
         except Exception:
             logger.warning("Failed to save adversarial skip report", exc_info=True)
-        return ai_findings
+        return
 
     logger.info(
         "Starting adversarial verification of %d finding(s)", len(high_risk)
@@ -296,12 +317,7 @@ def run_adversarial_verification(
         logger.warning(
             "Failed to write adversarial prompt file to VM", exc_info=True
         )
-        ai_findings_copy = ai_findings.copy()
-        ai_findings_copy["adversarial_verification"] = {
-            "error": "Failed to write prompt file to VM",
-            "summary": "Adversarial verification failed",
-        }
-        return ai_findings_copy
+        return
 
     model = config.model
     claude_cmd = (
@@ -339,12 +355,7 @@ def run_adversarial_verification(
         raw_output = stdout
     except Exception as exc:
         logger.error("Adversarial agent invocation failed: %s", exc)
-        ai_findings_copy = ai_findings.copy()
-        ai_findings_copy["adversarial_verification"] = {
-            "error": f"Agent invocation failed: {exc}",
-            "summary": "Adversarial verification failed",
-        }
-        return ai_findings_copy
+        return
 
     verification = _parse_adversarial_output(raw_output)
     logger.info(
@@ -355,14 +366,19 @@ def run_adversarial_verification(
 
     merged = _merge_adversarial_results(ai_findings, verification)
 
+    # Write merged findings JSON back into the VM for the synthesis agent.
+    try:
+        merged_json = json.dumps(merged, indent=2, default=str)
+        ssh_write_file(vm_name, merged_json, "/opt/scan-results/adversarial-findings.json")
+    except Exception:
+        logger.warning("Failed to save adversarial findings JSON", exc_info=True)
+
     # Write adversarial findings as a readable markdown report
     try:
         md = _format_adversarial_markdown(verification, merged)
         ssh_write_file(vm_name, md, "/opt/scan-results/adversarial-findings.md")
     except Exception:
         logger.warning("Failed to save adversarial findings markdown", exc_info=True)
-
-    return merged
 
 
 def _format_adversarial_markdown(

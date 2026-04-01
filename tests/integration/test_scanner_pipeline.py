@@ -51,43 +51,19 @@ class TestRunAllScanners:
         # Syft: run + no cat needed (metadata only)
         mock_syft.return_value = SSHResult("", "", 0)
 
-        # All other scanners: run command returns 0/1, then cat returns fixture
-        mock_grype.side_effect = [
-            SSHResult("", "", 1),  # grype run (exit 1 = findings)
-            SSHResult(_load("grype.json"), "", 0),  # cat output
-        ]
-        mock_osv.side_effect = [
-            SSHResult("", "", 1),
-            SSHResult(_load("osv.json"), "", 0),
-        ]
-        mock_sg.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult(_load("semgrep.json"), "", 0),
-        ]
-        mock_gd.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult(_load("guarddog.json"), "", 0),
-        ]
-        mock_gl.side_effect = [
-            SSHResult("", "", 1),  # exit 1 = leaks found
-            SSHResult(_load("gitleaks.json"), "", 0),
-        ]
+        # Scanners no longer cat+parse output — findings stay in VM.
+        # Each scanner only makes one ssh_exec call (the tool run itself).
+        mock_grype.return_value = SSHResult("", "", 1)  # exit 1 = findings
+        mock_osv.return_value = SSHResult("", "", 1)
+        mock_sg.return_value = SSHResult("", "", 0)
+        mock_gd.return_value = SSHResult("", "", 0)
+        mock_gl.return_value = SSHResult("", "", 1)  # exit 1 = leaks found
 
-        # New scanners: return minimal valid output
-        mock_bandit.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"results":[]}', "", 0),
-        ]
-        mock_checkov.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"results":{"failed_checks":[]}}', "", 0),
-        ]
+        mock_bandit.return_value = SSHResult("", "", 0)
+        mock_checkov.return_value = SSHResult("", "", 0)
         # hadolint: find returns no dockerfiles
         mock_hadolint.return_value = SSHResult("", "", 0)
-        mock_trivy.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"Results":[]}', "", 0),
-        ]
+        mock_trivy.return_value = SSHResult("", "", 0)
         # yara: rules dir not found
         mock_yara.return_value = SSHResult("", "", 0)
         # capa: no binaries found
@@ -96,10 +72,7 @@ class TestRunAllScanners:
         mock_govulncheck.return_value = SSHResult("", "", 0)
         # cargo-audit: no Cargo.lock
         mock_cargo_audit.return_value = SSHResult("", "", 0)
-        mock_scancode.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"files":[]}', "", 0),
-        ]
+        mock_scancode.return_value = SSHResult("", "", 0)
         mock_clamav.return_value = SSHResult("", "", 0)
 
         results = run_all_scanners("test-vm", _make_config())
@@ -114,12 +87,14 @@ class TestRunAllScanners:
             "govulncheck", "cargo-audit", "scancode", "clamav",
         }
 
-        # Check that findings were parsed
+        # Findings stay in VM — host-side ScanResults have empty findings
         grype_result = [r for r in results if r.tool_name == "grype"][0]
-        assert len(grype_result.findings) == 3
+        assert len(grype_result.findings) == 0
+        assert grype_result.raw_output_path == "/opt/scan-results/grype.json"
 
         gitleaks_result = [r for r in results if r.tool_name == "gitleaks"][0]
-        assert len(gitleaks_result.findings) == 2
+        assert len(gitleaks_result.findings) == 0
+        assert gitleaks_result.raw_output_path == "/opt/scan-results/gitleaks.json"
 
     @patch("thresher.scanners.clamav.ssh_exec")
     @patch("thresher.scanners.scancode.ssh_exec")
@@ -150,34 +125,21 @@ class TestRunAllScanners:
         # Make grype raise an exception
         mock_grype.side_effect = RuntimeError("connection lost")
 
-        # Others succeed
-        mock_osv.side_effect = [SSHResult("", "", 0), SSHResult('{"results":[]}', "", 0)]
-        mock_sg.side_effect = [SSHResult("", "", 0), SSHResult('{"results":[]}', "", 0)]
-        mock_gd.side_effect = [SSHResult("", "", 0), SSHResult("{}", "", 0)]
+        # Others succeed (single call each — no more cat+parse)
+        mock_osv.return_value = SSHResult("", "", 0)
+        mock_sg.return_value = SSHResult("", "", 0)
+        mock_gd.return_value = SSHResult("", "", 0)
         mock_gl.return_value = SSHResult("", "", 0)
 
-        # New scanners: minimal valid responses
-        mock_bandit.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"results":[]}', "", 0),
-        ]
-        mock_checkov.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"results":{"failed_checks":[]}}', "", 0),
-        ]
+        mock_bandit.return_value = SSHResult("", "", 0)
+        mock_checkov.return_value = SSHResult("", "", 0)
         mock_hadolint.return_value = SSHResult("", "", 0)
-        mock_trivy.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"Results":[]}', "", 0),
-        ]
+        mock_trivy.return_value = SSHResult("", "", 0)
         mock_yara.return_value = SSHResult("", "", 0)
         mock_capa.return_value = SSHResult("", "", 0)
         mock_govulncheck.return_value = SSHResult("", "", 0)
         mock_cargo_audit.return_value = SSHResult("", "", 0)
-        mock_scancode.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"files":[]}', "", 0),
-        ]
+        mock_scancode.return_value = SSHResult("", "", 0)
         mock_clamav.return_value = SSHResult("", "", 0)
 
         results = run_all_scanners("test-vm", _make_config())
@@ -217,43 +179,22 @@ class TestRunAllScanners:
         mock_runner_ssh.return_value = SSHResult("", "", 0)
         mock_syft.return_value = SSHResult("", "", 0)
 
-        mock_grype.side_effect = [
-            SSHResult("", "", 1),
-            SSHResult('{"matches": []}', "", 0),
-        ]
-        mock_osv.side_effect = [
-            SSHResult("", "", 1),
-            SSHResult('{"results": []}', "", 0),
-        ]
-        mock_sg.side_effect = [SSHResult("", "", 0), SSHResult('{"results":[]}', "", 0)]
-        mock_gd.side_effect = [SSHResult("", "", 0), SSHResult("{}", "", 0)]
-        mock_gl.side_effect = [
-            SSHResult("", "", 1),
-            SSHResult("[]", "", 0),
-        ]
+        # Single call each — no more cat+parse
+        mock_grype.return_value = SSHResult("", "", 1)
+        mock_osv.return_value = SSHResult("", "", 1)
+        mock_sg.return_value = SSHResult("", "", 0)
+        mock_gd.return_value = SSHResult("", "", 0)
+        mock_gl.return_value = SSHResult("", "", 1)
 
-        # New scanners: minimal valid responses
-        mock_bandit.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"results":[]}', "", 0),
-        ]
-        mock_checkov.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"results":{"failed_checks":[]}}', "", 0),
-        ]
+        mock_bandit.return_value = SSHResult("", "", 0)
+        mock_checkov.return_value = SSHResult("", "", 0)
         mock_hadolint.return_value = SSHResult("", "", 0)
-        mock_trivy.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"Results":[]}', "", 0),
-        ]
+        mock_trivy.return_value = SSHResult("", "", 0)
         mock_yara.return_value = SSHResult("", "", 0)
         mock_capa.return_value = SSHResult("", "", 0)
         mock_govulncheck.return_value = SSHResult("", "", 0)
         mock_cargo_audit.return_value = SSHResult("", "", 0)
-        mock_scancode.side_effect = [
-            SSHResult("", "", 0),
-            SSHResult('{"files":[]}', "", 0),
-        ]
+        mock_scancode.return_value = SSHResult("", "", 0)
         mock_clamav.return_value = SSHResult("", "", 0)
 
         results = run_all_scanners("test-vm", _make_config())

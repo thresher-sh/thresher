@@ -29,7 +29,7 @@ def _load_agent_fixture(name: str) -> str:
 class TestAnalystPipeline:
     @patch("thresher.agents.analyst.ssh_write_file")
     @patch("thresher.agents.analyst.ssh_exec")
-    def test_passes_api_key(self, mock_exec, mock_write):
+    def test_passes_api_key_via_tmpfs(self, mock_exec, mock_write):
         mock_exec.return_value = SSHResult(
             _load_agent_fixture("analyst_clean.json"), "", 0
         )
@@ -38,8 +38,14 @@ class TestAnalystPipeline:
         config = _make_config()
         run_analysis("vm", config)
 
-        claude_call = mock_exec.call_args
-        assert claude_call.kwargs.get("env") == {"ANTHROPIC_API_KEY": "sk-ant-test-key"}
+        # API key is now written to tmpfs, then read-and-deleted inline
+        cmds = [c[0][1] for c in mock_exec.call_args_list]
+        # First ssh_exec writes the key to /dev/shm
+        assert any("/dev/shm/.api_key" in cmd for cmd in cmds)
+        # The claude command reads from tmpfs and deletes
+        claude_cmd = cmds[-1]  # last call is the claude invocation
+        assert "ANTHROPIC_API_KEY=$(cat /dev/shm/.api_key)" in claude_cmd
+        assert "rm -f /dev/shm/.api_key" in claude_cmd
 
     @patch("thresher.agents.analyst.ssh_write_file")
     @patch("thresher.agents.analyst.ssh_exec")
@@ -66,72 +72,102 @@ class TestAnalystPipeline:
 
     @patch("thresher.agents.analyst.ssh_write_file")
     @patch("thresher.agents.analyst.ssh_exec")
-    def test_returns_parsed_findings(self, mock_exec, mock_write):
+    def test_writes_findings_to_vm(self, mock_exec, mock_write):
         mock_exec.return_value = SSHResult(
             _load_agent_fixture("analyst_clean.json"), "", 0
         )
         mock_write.return_value = None
 
         result = run_analysis("vm", _make_config())
-        assert "findings" in result
+        # run_analysis now returns None (findings stay in VM)
+        assert result is None
+        # Verify findings JSON was written to VM
+        write_paths = [c[0][2] for c in mock_write.call_args_list]
+        assert "/opt/scan-results/analyst-findings.json" in write_paths
+        assert "/opt/scan-results/analyst-findings.md" in write_paths
 
 
 class TestAdversarialPipeline:
     @patch("thresher.agents.adversarial.ssh_write_file")
     @patch("thresher.agents.adversarial.ssh_exec")
-    def test_passes_api_key(self, mock_exec, mock_write):
-        mock_exec.return_value = SSHResult(
-            _load_agent_fixture("adversarial.json"), "", 0
-        )
-        mock_write.return_value = None
-
-        ai_findings = {
+    def test_passes_api_key_via_tmpfs(self, mock_exec, mock_write):
+        # First call: cat analyst-findings.json (reads from VM)
+        analyst_findings = json.dumps({
             "findings": [
                 {"file_path": "/opt/target/setup.py", "risk_score": 7,
                  "findings": [{"description": "bad", "line_numbers": [1]}]},
             ]
-        }
+        })
+        mock_exec.side_effect = [
+            SSHResult(analyst_findings, "", 0),  # cat analyst-findings.json
+            SSHResult("", "", 0),  # write API key to tmpfs
+            SSHResult(_load_agent_fixture("adversarial.json"), "", 0),  # claude
+        ]
+        mock_write.return_value = None
+
         config = _make_config()
-        run_adversarial_verification("vm", config, ai_findings)
+        run_adversarial_verification("vm", config)
 
-        claude_call = mock_exec.call_args
-        assert claude_call.kwargs.get("env") == {"ANTHROPIC_API_KEY": "sk-ant-test-key"}
+        # API key is now written to tmpfs, then read-and-deleted inline
+        cmds = [c[0][1] for c in mock_exec.call_args_list]
+        assert any("/dev/shm/.api_key" in cmd for cmd in cmds)
+        claude_cmd = cmds[-1]
+        assert "ANTHROPIC_API_KEY=$(cat /dev/shm/.api_key)" in claude_cmd
+        assert "rm -f /dev/shm/.api_key" in claude_cmd
 
+    @patch("thresher.agents.adversarial.ssh_write_file")
     @patch("thresher.agents.adversarial.ssh_exec")
-    def test_skips_no_high_risk(self, mock_exec):
-        ai_findings = {
+    def test_skips_no_high_risk(self, mock_exec, mock_write):
+        analyst_findings = json.dumps({
             "findings": [
                 {"file_path": "/a.py", "risk_score": 2, "findings": []},
             ]
-        }
-        result = run_adversarial_verification("vm", _make_config(), ai_findings)
-        assert result == ai_findings
-        mock_exec.assert_not_called()
+        })
+        mock_exec.return_value = SSHResult(analyst_findings, "", 0)
+        mock_write.return_value = None
+
+        result = run_adversarial_verification("vm", _make_config())
+        assert result is None
+        # Only the cat call should have been made (no claude invocation)
+        assert mock_exec.call_count == 1
 
     @patch("thresher.agents.adversarial.ssh_write_file")
     @patch("thresher.agents.adversarial.ssh_exec")
     def test_merge_flow(self, mock_exec, mock_write):
-        mock_exec.return_value = SSHResult(
-            _load_agent_fixture("adversarial.json"), "", 0
-        )
-        mock_write.return_value = None
-
-        ai_findings = {
+        analyst_findings = json.dumps({
             "findings": [
                 {"file_path": "/opt/target/setup.py", "risk_score": 7,
                  "findings": [{"description": "bad", "line_numbers": [1]}]},
                 {"file_path": "/opt/target/conftest.py", "risk_score": 5,
                  "findings": [{"description": "maybe", "line_numbers": [10]}]},
             ]
-        }
-        result = run_adversarial_verification("vm", _make_config(), ai_findings)
+        })
+        mock_exec.side_effect = [
+            SSHResult(analyst_findings, "", 0),  # cat analyst-findings.json
+            SSHResult("", "", 0),  # write API key to tmpfs
+            SSHResult(_load_agent_fixture("adversarial.json"), "", 0),  # claude
+        ]
+        mock_write.return_value = None
 
-        assert "adversarial_verification" in result
-        setup = [f for f in result["findings"]
+        result = run_adversarial_verification("vm", _make_config())
+        # run_adversarial_verification now returns None (findings stay in VM)
+        assert result is None
+
+        # Verify merged findings JSON was written to VM
+        write_paths = [c[0][2] for c in mock_write.call_args_list]
+        assert "/opt/scan-results/adversarial-findings.json" in write_paths
+        assert "/opt/scan-results/adversarial-findings.md" in write_paths
+
+        # Verify the merged JSON contains adversarial verification data
+        json_write = [c for c in mock_write.call_args_list
+                      if c[0][2] == "/opt/scan-results/adversarial-findings.json"][0]
+        merged = json.loads(json_write[0][1])
+        assert "adversarial_verification" in merged
+        setup = [f for f in merged["findings"]
                  if f["file_path"] == "/opt/target/setup.py"][0]
         assert setup["adversarial_status"] == "confirmed"
 
-        conftest = [f for f in result["findings"]
+        conftest = [f for f in merged["findings"]
                     if f["file_path"] == "/opt/target/conftest.py"][0]
         assert conftest["adversarial_status"] == "downgraded"
         assert conftest["risk_score"] == 2

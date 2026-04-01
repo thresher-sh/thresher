@@ -122,6 +122,9 @@ class TestProvisionVM:
         # Source download hardening
         assert "/tmp/safe_clone.sh" in copied_destinations
 
+        # Scanner-deps Docker build context
+        assert "/tmp/docker-scanner-deps/Dockerfile.scanner-deps" in copied_destinations
+
         # Network hardening (lockdown)
         assert "/tmp/lockdown.sh" in copied_destinations
         assert "/tmp/scanner-docker" in copied_destinations
@@ -146,12 +149,19 @@ class TestProvisionVM:
     @patch("thresher.vm.lima.ssh_exec")
     @patch("thresher.vm.lima.ssh_copy_to")
     def test_raises_on_lockdown_failure(self, mock_copy, mock_exec, config):
-        # provision.sh and firewall.sh succeed, lockdown.sh fails
-        mock_exec.side_effect = [
-            ("", "", 0),  # provision.sh
-            ("", "", 0),  # firewall.sh
-            ("", "lockdown error", 1),  # lockdown.sh
-        ]
+        # All ssh_exec calls succeed except lockdown.sh
+        mock_exec.return_value = ("", "", 0)
+        call_count = [0]
+        original_return = ("", "", 0)
+
+        def side_effect(*args, **kwargs):
+            call_count[0] += 1
+            cmd = args[1] if len(args) > 1 else ""
+            if "lockdown.sh" in cmd:
+                return ("", "lockdown error", 1)
+            return original_return
+
+        mock_exec.side_effect = side_effect
         with pytest.raises(LimaError, match="Lockdown failed"):
             provision_vm("test-vm", config)
 

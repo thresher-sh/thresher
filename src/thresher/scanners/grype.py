@@ -7,7 +7,6 @@ import time
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.safe_io import safe_json_loads
 from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ def run_grype(vm_name: str, sbom_path: str, output_dir: str) -> ScanResults:
         output_dir: Directory for scan artifacts inside the VM.
 
     Returns:
-        ScanResults with parsed Finding objects.
+        ScanResults with execution metadata only (findings stay in VM).
     """
     output_path = f"{output_dir}/grype.json"
     cmd = f"grype sbom:{sbom_path} -o json > {output_path}"
@@ -56,24 +55,12 @@ def run_grype(vm_name: str, sbom_path: str, output_dir: str) -> ScanResults:
                 errors=[f"Grype failed (exit {result.exit_code}): {result.stderr}"],
             )
 
-        # Read JSON output from the VM.
-        cat_result = ssh_exec(vm_name, f"cat {output_path}")
-        raw = safe_json_loads(cat_result.stdout, source="grype output")
-        if raw is None:
-            return ScanResults(
-                tool_name="grype",
-                execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                errors=["Failed to parse Grype JSON output"],
-                raw_output_path=output_path,
-            )
-
-        findings = parse_grype_output(raw)
+        # Findings remain inside the VM at output_path.
+        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="grype",
             execution_time_seconds=elapsed,
             exit_code=result.exit_code,
-            findings=findings,
             raw_output_path=output_path,
         )
 

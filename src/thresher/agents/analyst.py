@@ -142,19 +142,20 @@ def _empty_findings(reason: str) -> dict[str, Any]:
 def run_analysis(
     vm_name: str,
     config: ScanConfig,
-) -> dict[str, Any]:
+) -> None:
     """Run the analyst agent as an independent security researcher.
 
     The agent explores the repository on its own with no scanner context.
     It uses Read, Glob, and Grep to investigate the codebase for supply
     chain attacks, malicious code, and dangerous dependencies.
 
+    Findings are written to the VM at /opt/scan-results/analyst-findings.json
+    and /opt/scan-results/analyst-findings.md.  No structured findings data
+    is returned to the host -- only log-level output crosses the VM boundary.
+
     Args:
         vm_name: Name of the Lima VM.
         config: Scan configuration.
-
-    Returns:
-        Dict with structured AI analysis findings.
     """
     prompt = ANALYST_SYSTEM_PROMPT
 
@@ -162,7 +163,7 @@ def run_analysis(
         ssh_write_file(vm_name, prompt, "/tmp/analyst_prompt.txt")
     except Exception:
         logger.warning("Failed to write prompt file to VM", exc_info=True)
-        return _empty_findings("Failed to write prompt file to VM")
+        return
 
     model = config.model
     claude_cmd = (
@@ -200,7 +201,7 @@ def run_analysis(
         raw_output = stdout
     except Exception as exc:
         logger.error("Analyst agent invocation failed: %s", exc)
-        return _empty_findings(f"Agent invocation failed: {exc}")
+        return
 
     findings = _parse_agent_json_output(raw_output)
     logger.info(
@@ -208,14 +209,21 @@ def run_analysis(
         len(findings.get("findings", [])),
     )
 
+    # Write findings JSON back into the VM so downstream agents can read it.
+    # The slight boundary crossing (stdout -> host -> write back) is acceptable
+    # because we are routing data back into the VM, not consuming it on the host.
+    try:
+        findings_json = json.dumps(findings, indent=2, default=str)
+        ssh_write_file(vm_name, findings_json, "/opt/scan-results/analyst-findings.json")
+    except Exception:
+        logger.warning("Failed to save analyst findings JSON", exc_info=True)
+
     # Write analyst findings as a readable markdown report
     try:
         md = _format_analyst_markdown(findings)
         ssh_write_file(vm_name, md, "/opt/scan-results/analyst-findings.md")
     except Exception:
         logger.warning("Failed to save analyst findings markdown", exc_info=True)
-
-    return findings
 
 
 def _format_analyst_markdown(findings: dict[str, Any]) -> str:

@@ -361,6 +361,21 @@ for bin in cargo-audit; do
 done
 
 # ---------------------------------------------------------------------------
+# Build scanner-deps Docker image
+# ---------------------------------------------------------------------------
+if sudo docker image inspect scanner-deps:latest &>/dev/null; then
+    log "scanner-deps Docker image already exists."
+else
+    log "Building scanner-deps Docker image..."
+    if [ -d /tmp/docker-scanner-deps ]; then
+        sudo docker build -t scanner-deps:latest -f /tmp/docker-scanner-deps/Dockerfile.scanner-deps /tmp/docker-scanner-deps/
+        log "scanner-deps Docker image built."
+    else
+        log "WARNING: /tmp/docker-scanner-deps not found — skipping scanner-deps build."
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Create working directories
 # ---------------------------------------------------------------------------
 log "Creating working directories..."
@@ -368,9 +383,12 @@ sudo mkdir -p /opt/target
 sudo mkdir -p /opt/deps
 sudo mkdir -p /opt/scan-results
 sudo mkdir -p /opt/security-reports
+sudo mkdir -p /home/scanner/work/target
+sudo mkdir -p /home/scanner/work/deps
 
 # Make directories writable by any user (the SSH user that runs scans
 # differs from the sudo context that runs this script)
 sudo chmod -R 777 /opt/target /opt/deps /opt/scan-results /opt/security-reports
+sudo chmod -R 777 /home/scanner/work
 
 log "Provisioning complete. All tools installed and directories created."

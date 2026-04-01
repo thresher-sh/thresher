@@ -135,6 +135,28 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
         raise LimaError(f"Safe clone script not found: {safe_clone_script}")
     ssh_copy_to(vm_name, str(safe_clone_script), "/tmp/safe_clone.sh")
 
+    # Copy predep output validation hook (used by Stage 1 agent)
+    validate_script = _VM_SCRIPTS_DIR / "validate_predep_output.sh"
+    if validate_script.exists():
+        ssh_copy_to(vm_name, str(validate_script), "/tmp/validate_predep_output.sh")
+
+    # Copy scanner-deps Docker build context (Dockerfile + scripts)
+    docker_dir = _PROJECT_ROOT / "docker"
+    if docker_dir.exists():
+        # Create the build context directory in the VM
+        ssh_exec(vm_name, "mkdir -p /tmp/docker-scanner-deps/scripts")
+        ssh_copy_to(
+            vm_name,
+            str(docker_dir / "Dockerfile.scanner-deps"),
+            "/tmp/docker-scanner-deps/Dockerfile.scanner-deps",
+        )
+        for script in sorted((docker_dir / "scripts").iterdir()):
+            ssh_copy_to(
+                vm_name,
+                str(script),
+                f"/tmp/docker-scanner-deps/scripts/{script.name}",
+            )
+
     # Copy lockdown scripts (scanner-docker wrapper + lockdown.sh)
     lockdown_script = _VM_SCRIPTS_DIR / "lockdown.sh"
     docker_wrapper = _VM_SCRIPTS_DIR / "scanner-docker"
