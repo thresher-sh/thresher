@@ -9,3 +9,16 @@ Move agents and the like from this command and control stuff to agent code and s
 ---
 
 Move final report copy to a text only stream of report data, no actual file copies.
+
+
+---
+
+Validate these things from github issue todo:
+    Validate clamav db is up to date in target image.
+    more secret scanning
+    Pentester persona for analysis (can target oss package be exploited if pulled into system)
+    Additional sonarqube/snyk analysis type stuff (Static code analysis for quality)
+    General pattern, quality checker
+    Activitiy/Risk checker - Popularity, last pushed change, maintainer activities, # of stale pull requests, etc...
+    Commit history, recently (any new packages added? How old are those packages?)
+    Scan for remote downloads hidden within special tools like the axios hack

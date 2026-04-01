@@ -22,6 +22,10 @@ def _load(name: str) -> str:
 
 
 class TestRunAllScanners:
+    @patch("thresher.scanners.registry_meta.ssh_write_file")
+    @patch("thresher.scanners.registry_meta.ssh_exec")
+    @patch("thresher.scanners.deps_dev.ssh_write_file")
+    @patch("thresher.scanners.deps_dev.ssh_exec")
     @patch("thresher.scanners.entropy.ssh_write_file")
     @patch("thresher.scanners.entropy.ssh_exec")
     @patch("thresher.scanners.install_hooks.ssh_write_file")
@@ -53,6 +57,8 @@ class TestRunAllScanners:
         mock_semgrep_sc, mock_guarddog_deps,
         mock_install_hooks_exec, mock_install_hooks_write,
         mock_entropy_exec, mock_entropy_write,
+        mock_deps_dev_exec, mock_deps_dev_write,
+        mock_registry_meta_exec, mock_registry_meta_write,
     ):
         # Runner's mkdir call
         mock_runner_ssh.return_value = SSHResult("", "", 0)
@@ -91,11 +97,15 @@ class TestRunAllScanners:
         mock_install_hooks_write.return_value = None
         mock_entropy_exec.return_value = SSHResult("", "", 0)
         mock_entropy_write.return_value = None
+        mock_deps_dev_exec.return_value = SSHResult("", "", 0)
+        mock_deps_dev_write.return_value = None
+        mock_registry_meta_exec.return_value = SSHResult("", "", 0)
+        mock_registry_meta_write.return_value = None
 
         results = run_all_scanners("test-vm", _make_config())
 
-        # Should have 20 results (syft + 19 parallel)
-        assert len(results) == 20
+        # Should have 22 results (syft + 21 parallel)
+        assert len(results) == 22
 
         tool_names = {r.tool_name for r in results}
         assert tool_names == {
@@ -103,6 +113,7 @@ class TestRunAllScanners:
             "bandit", "checkov", "hadolint", "trivy", "yara", "capa",
             "govulncheck", "cargo-audit", "scancode", "clamav",
             "semgrep-supply-chain", "guarddog-deps", "install-hooks", "entropy",
+            "deps-dev", "registry-meta",
         }
 
         # Findings stay in VM — host-side ScanResults have empty findings
@@ -114,6 +125,10 @@ class TestRunAllScanners:
         assert len(gitleaks_result.findings) == 0
         assert gitleaks_result.raw_output_path == "/opt/scan-results/gitleaks.json"
 
+    @patch("thresher.scanners.registry_meta.ssh_write_file")
+    @patch("thresher.scanners.registry_meta.ssh_exec")
+    @patch("thresher.scanners.deps_dev.ssh_write_file")
+    @patch("thresher.scanners.deps_dev.ssh_exec")
     @patch("thresher.scanners.entropy.ssh_write_file")
     @patch("thresher.scanners.entropy.ssh_exec")
     @patch("thresher.scanners.install_hooks.ssh_write_file")
@@ -145,6 +160,8 @@ class TestRunAllScanners:
         mock_semgrep_sc, mock_guarddog_deps,
         mock_install_hooks_exec, mock_install_hooks_write,
         mock_entropy_exec, mock_entropy_write,
+        mock_deps_dev_exec, mock_deps_dev_write,
+        mock_registry_meta_exec, mock_registry_meta_write,
     ):
         mock_runner_ssh.return_value = SSHResult("", "", 0)
         mock_syft.return_value = SSHResult("", "", 0)
@@ -176,17 +193,25 @@ class TestRunAllScanners:
         mock_install_hooks_write.return_value = None
         mock_entropy_exec.return_value = SSHResult("", "", 0)
         mock_entropy_write.return_value = None
+        mock_deps_dev_exec.return_value = SSHResult("", "", 0)
+        mock_deps_dev_write.return_value = None
+        mock_registry_meta_exec.return_value = SSHResult("", "", 0)
+        mock_registry_meta_write.return_value = None
 
         results = run_all_scanners("test-vm", _make_config())
 
-        # All 20 should still be present
-        assert len(results) == 20
+        # All 22 should still be present
+        assert len(results) == 22
 
         # Grype should have an error entry
         grype = [r for r in results if r.tool_name == "grype"][0]
         assert grype.exit_code == -1
         assert len(grype.errors) > 0
 
+    @patch("thresher.scanners.registry_meta.ssh_write_file")
+    @patch("thresher.scanners.registry_meta.ssh_exec")
+    @patch("thresher.scanners.deps_dev.ssh_write_file")
+    @patch("thresher.scanners.deps_dev.ssh_exec")
     @patch("thresher.scanners.entropy.ssh_write_file")
     @patch("thresher.scanners.entropy.ssh_exec")
     @patch("thresher.scanners.install_hooks.ssh_write_file")
@@ -218,6 +243,8 @@ class TestRunAllScanners:
         mock_semgrep_sc, mock_guarddog_deps,
         mock_install_hooks_exec, mock_install_hooks_write,
         mock_entropy_exec, mock_entropy_write,
+        mock_deps_dev_exec, mock_deps_dev_write,
+        mock_registry_meta_exec, mock_registry_meta_write,
     ):
         """Exit code 1 from Grype/OSV/Gitleaks means findings found, not error."""
         mock_runner_ssh.return_value = SSHResult("", "", 0)
@@ -248,6 +275,10 @@ class TestRunAllScanners:
         mock_install_hooks_write.return_value = None
         mock_entropy_exec.return_value = SSHResult("", "", 0)
         mock_entropy_write.return_value = None
+        mock_deps_dev_exec.return_value = SSHResult("", "", 0)
+        mock_deps_dev_write.return_value = None
+        mock_registry_meta_exec.return_value = SSHResult("", "", 0)
+        mock_registry_meta_write.return_value = None
 
         results = run_all_scanners("test-vm", _make_config())
 

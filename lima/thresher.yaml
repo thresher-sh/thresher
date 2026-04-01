@@ -41,6 +41,8 @@ hostResolver:
     metrics.semgrep.dev: metrics.semgrep.dev
     ghcr.io: ghcr.io
     pkg-containers.githubusercontent.com: pkg-containers.githubusercontent.com
+    # Package metadata intelligence
+    api.deps.dev: api.deps.dev
     # Malware definitions
     database.clamav.net: database.clamav.net
 

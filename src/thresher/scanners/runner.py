@@ -12,6 +12,7 @@ from thresher.scanners.capa_scanner import run_capa
 from thresher.scanners.clamav import run_clamav
 from thresher.scanners.cargo_audit import run_cargo_audit
 from thresher.scanners.checkov import run_checkov
+from thresher.scanners.deps_dev import run_deps_dev
 from thresher.scanners.entropy import run_entropy
 from thresher.scanners.govulncheck import run_govulncheck
 from thresher.scanners.grype import run_grype
@@ -22,6 +23,7 @@ from thresher.scanners.hadolint import run_hadolint
 from thresher.scanners.install_hooks import run_install_hooks
 from thresher.scanners.models import Finding, ScanResults
 from thresher.scanners.osv import run_osv
+from thresher.scanners.registry_meta import run_registry_meta
 from thresher.scanners.scancode import run_scancode
 from thresher.scanners.semgrep import run_semgrep
 from thresher.scanners.semgrep_supply_chain import run_semgrep_supply_chain
@@ -91,6 +93,8 @@ def run_all_scanners(vm_name: str, config: ScanConfig) -> list[ScanResults]:
         ("guarddog-deps", lambda: run_guarddog_deps(vm_name, OUTPUT_DIR)),
         ("install-hooks", lambda: run_install_hooks(vm_name, OUTPUT_DIR)),
         ("entropy", lambda: run_entropy(vm_name, OUTPUT_DIR)),
+        ("deps-dev", lambda: run_deps_dev(vm_name, OUTPUT_DIR)),
+        ("registry-meta", lambda: run_registry_meta(vm_name, OUTPUT_DIR)),
     ]
 
     logger.info("Running %d scanners in parallel...", len(parallel_tasks))

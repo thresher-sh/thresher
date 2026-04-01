@@ -37,6 +37,7 @@ declare -A WHITELIST_DOMAINS=(
     ["pkg-containers.githubusercontent.com"]="GitHub packages CDN (Trivy DB)"
     ["vuln.go.dev"]="Go vulnerability database"
     ["database.clamav.net"]="ClamAV virus definitions"
+    ["api.deps.dev"]="Google Open Source Insights (Scorecard, typosquatting)"
 )
 
 resolve_domain() {
