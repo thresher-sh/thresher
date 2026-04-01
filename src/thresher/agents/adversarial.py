@@ -18,6 +18,11 @@ from thresher.vm.ssh import ssh_exec, ssh_write_file
 
 logger = logging.getLogger(__name__)
 
+
+def _shell_quote_key(value: str) -> str:
+    """Quote a string for safe inclusion in a shell command."""
+    return "'" + value.replace("'", "'\\''") + "'"
+
 TARGET_DIR = "/opt/target"
 
 # Risk threshold: findings at or above this score go through adversarial review
@@ -309,12 +314,27 @@ def run_adversarial_verification(
         f"--max-turns 20"
     )
 
+    # Write API key to tmpfs (never touches disk) and read-and-delete to
+    # minimize the exposure window inside the VM.
     env = config.ai_env()
+    api_key = env.get("ANTHROPIC_API_KEY", "") if env else ""
+    if api_key:
+        ssh_exec(
+            vm_name,
+            "printf '%s' " + _shell_quote_key(api_key) + " > /dev/shm/.api_key"
+            " && chmod 600 /dev/shm/.api_key",
+        )
+        claude_cmd = (
+            "ANTHROPIC_API_KEY=$(cat /dev/shm/.api_key); "
+            "export ANTHROPIC_API_KEY; "
+            "rm -f /dev/shm/.api_key; "
+            + claude_cmd
+        )
 
     logger.info("Invoking adversarial agent in VM %s", vm_name)
     try:
         stdout, _stderr, _rc = ssh_exec(
-            vm_name, claude_cmd, timeout=2400, env=env or None
+            vm_name, claude_cmd, timeout=2400,
         )
         raw_output = stdout
     except Exception as exc:

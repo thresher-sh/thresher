@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
+from thresher.vm.safe_io import safe_json_loads
 from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def run_checkov(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
             )
 
         cat_result = ssh_exec(vm_name, f"cat {output_path}")
-        raw = _safe_parse_json(cat_result.stdout)
+        raw = safe_json_loads(cat_result.stdout, source="checkov output")
         if raw is None:
             return ScanResults(
                 tool_name="checkov",
@@ -144,12 +144,3 @@ def parse_checkov_output(raw: Any) -> list[Finding]:
             )
 
     return findings
-
-
-def _safe_parse_json(text: str) -> Any | None:
-    """Attempt to parse JSON, returning None on failure."""
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        logger.error("Failed to parse JSON output from Checkov")
-        return None

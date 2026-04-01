@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
+from thresher.vm.safe_io import safe_json_loads
 from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ def run_gitleaks(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
             )
 
         cat_result = ssh_exec(vm_name, f"cat {output_path}")
-        raw = _safe_parse_json_list(cat_result.stdout)
+        raw = safe_json_loads(cat_result.stdout, source="gitleaks output")
         if raw is None:
             return ScanResults(
                 tool_name="gitleaks",
@@ -155,16 +155,3 @@ def parse_gitleaks_output(raw: list[dict[str, Any]]) -> list[Finding]:
         )
 
     return findings
-
-
-def _safe_parse_json_list(text: str) -> list[dict[str, Any]] | None:
-    """Attempt to parse JSON as a list, returning None on failure."""
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return parsed
-        logger.error("Gitleaks output is not a JSON array")
-        return None
-    except (json.JSONDecodeError, TypeError):
-        logger.error("Failed to parse JSON output from Gitleaks")
-        return None

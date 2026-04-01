@@ -1,0 +1,3 @@
+Snapshot and confirm SHA Checksums of dependencies we are downloading and installing. 
+
+For example YARA git clone... 

@@ -247,7 +247,11 @@ def run_scan(config: ScanConfig) -> None:
         from thresher.docker.sandbox import download_dependencies
 
         safe_url = shlex.quote(config.repo_url)
-        stdout, stderr, rc = ssh_exec(vm_name, f"git clone --depth=1 {safe_url} /opt/target")
+        stdout, stderr, rc = ssh_exec(
+            vm_name,
+            f"bash /tmp/safe_clone.sh {safe_url} /opt/target",
+            timeout=300,
+        )
         if rc != 0:
             raise RuntimeError(f"git clone failed (exit {rc}): {stderr}")
         download_dependencies(vm_name, config)
@@ -282,12 +286,13 @@ def run_scan(config: ScanConfig) -> None:
 
         report_path = generate_report(vm_name, config, scanner_results, verified_findings)
 
-        # Retrieve report from VM
-        from thresher.vm.ssh import ssh_copy_from
+        # Retrieve report from VM (validated copy — treats VM as untrusted)
+        from thresher.vm.safe_io import ssh_copy_from_safe, validate_report_structure
 
         output = Path(config.output_dir) / scan_id
         output.mkdir(parents=True, exist_ok=True)
-        ssh_copy_from(vm_name, report_path, str(output))
+        ssh_copy_from_safe(vm_name, report_path, str(output))
+        validate_report_structure(output)
 
         print_success(f"\nScan complete. Report saved to: {output}")
 
