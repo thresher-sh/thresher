@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
+from thresher.vm.safe_io import safe_json_loads
 from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def run_osv(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
             )
 
         cat_result = ssh_exec(vm_name, f"cat {output_path}")
-        raw = _safe_parse_json(cat_result.stdout)
+        raw = safe_json_loads(cat_result.stdout, source="osv-scanner output")
         if raw is None:
             return ScanResults(
                 tool_name="osv-scanner",
@@ -219,12 +219,3 @@ def _extract_fix_version(vuln: dict[str, Any]) -> str | None:
                 if fixed:
                     return fixed
     return None
-
-
-def _safe_parse_json(text: str) -> dict[str, Any] | None:
-    """Attempt to parse JSON, returning None on failure."""
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        logger.error("Failed to parse JSON output from OSV-Scanner")
-        return None

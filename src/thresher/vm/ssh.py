@@ -66,6 +66,10 @@ def ssh_exec(
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
 
+    # Maximum stdout we'll accumulate before killing the process.
+    # Prevents a compromised VM from exhausting host memory.
+    max_stdout_bytes = 50 * 1024 * 1024  # 50 MB
+
     try:
         import selectors
         import time
@@ -74,6 +78,7 @@ def ssh_exec(
         sel.register(proc.stdout, selectors.EVENT_READ)
         sel.register(proc.stderr, selectors.EVENT_READ)
 
+        stdout_size = 0
         try:
             deadline = time.monotonic() + timeout
             while sel.get_map():
@@ -92,6 +97,14 @@ def ssh_exec(
                         continue
                     stripped = line.rstrip("\n")
                     if key.fileobj is proc.stdout:
+                        stdout_size += len(line)
+                        if stdout_size > max_stdout_bytes:
+                            proc.kill()
+                            proc.wait()
+                            raise SSHError(
+                                f"VM output exceeded {max_stdout_bytes} bytes, "
+                                f"killed process in '{vm_name}'"
+                            )
                         stdout_lines.append(line)
                         logger.info("  %s", stripped)
                     else:

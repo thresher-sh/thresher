@@ -14,6 +14,7 @@ from thresher.vm.lima import (
     build_base,
     clean_working_dirs,
     ensure_base_running,
+    provision_vm,
     stop_vm,
 )
 
@@ -103,6 +104,56 @@ class TestBuildBase:
         build_base(config)
 
         mock_destroy.assert_called_once_with(BASE_VM_NAME)
+
+
+class TestProvisionVM:
+    @patch("thresher.vm.lima.ssh_exec", return_value=("", "", 0))
+    @patch("thresher.vm.lima.ssh_copy_to")
+    def test_copies_all_hardening_scripts(self, mock_copy, mock_exec, config):
+        provision_vm("test-vm", config)
+
+        # Collect all destination paths from ssh_copy_to calls
+        copied_destinations = [c[0][2] for c in mock_copy.call_args_list]
+
+        # Core provisioning scripts
+        assert "/tmp/provision.sh" in copied_destinations
+        assert "/tmp/firewall.sh" in copied_destinations
+
+        # Source download hardening
+        assert "/tmp/safe_clone.sh" in copied_destinations
+
+        # Network hardening (lockdown)
+        assert "/tmp/lockdown.sh" in copied_destinations
+        assert "/tmp/scanner-docker" in copied_destinations
+
+    @patch("thresher.vm.lima.ssh_exec", return_value=("", "", 0))
+    @patch("thresher.vm.lima.ssh_copy_to")
+    def test_lockdown_runs_last(self, mock_copy, mock_exec, config):
+        provision_vm("test-vm", config)
+
+        # Collect the commands that were executed via ssh_exec
+        exec_cmds = [c[0][1] for c in mock_exec.call_args_list]
+
+        # Find indices of provision, firewall, and lockdown executions
+        provision_idx = next(i for i, c in enumerate(exec_cmds) if "provision.sh" in c)
+        firewall_idx = next(i for i, c in enumerate(exec_cmds) if "firewall.sh" in c)
+        lockdown_idx = next(i for i, c in enumerate(exec_cmds) if "lockdown.sh" in c)
+
+        # Lockdown must run after both provision and firewall
+        assert lockdown_idx > provision_idx
+        assert lockdown_idx > firewall_idx
+
+    @patch("thresher.vm.lima.ssh_exec")
+    @patch("thresher.vm.lima.ssh_copy_to")
+    def test_raises_on_lockdown_failure(self, mock_copy, mock_exec, config):
+        # provision.sh and firewall.sh succeed, lockdown.sh fails
+        mock_exec.side_effect = [
+            ("", "", 0),  # provision.sh
+            ("", "", 0),  # firewall.sh
+            ("", "lockdown error", 1),  # lockdown.sh
+        ]
+        with pytest.raises(LimaError, match="Lockdown failed"):
+            provision_vm("test-vm", config)
 
 
 class TestCleanWorkingDirs:

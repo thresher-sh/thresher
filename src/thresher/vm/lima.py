@@ -129,6 +129,12 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
         raise LimaError(f"Firewall script not found: {firewall_script_path}")
     ssh_copy_to(vm_name, str(firewall_script_path), "/tmp/firewall.sh")
 
+    # Copy safe_clone.sh (hardened git clone script)
+    safe_clone_script = _VM_SCRIPTS_DIR / "safe_clone.sh"
+    if not safe_clone_script.exists():
+        raise LimaError(f"Safe clone script not found: {safe_clone_script}")
+    ssh_copy_to(vm_name, str(safe_clone_script), "/tmp/safe_clone.sh")
+
     # Copy lockdown scripts (scanner-docker wrapper + lockdown.sh)
     lockdown_script = _VM_SCRIPTS_DIR / "lockdown.sh"
     docker_wrapper = _VM_SCRIPTS_DIR / "scanner-docker"

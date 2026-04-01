@@ -1,7 +1,7 @@
 
-  0. Name Change
-  1. Network hardening (smallest change, highest security impact)
-  2. Source download hardening
+  x 0. Name Change
+  x 1. Network hardening (smallest change, highest security impact)
+  x 2. Source download hardening
   3. Host boundary hardening
   4. Dependency resolution container
   5. Custom Semgrep rules → install hooks → entropy scanner

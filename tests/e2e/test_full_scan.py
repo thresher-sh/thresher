@@ -83,13 +83,13 @@ class TestSkipAIScan:
         vm_name, config = ephemeral_vm
         provision_vm(vm_name, config)
 
-        # Clone a small repo (sudo because /opt/target is root-owned)
+        # Clone a small repo using the hardened safe_clone.sh script
         result = ssh_exec(
             vm_name,
-            "sudo git clone --depth=1 https://github.com/pallets/markupsafe /opt/target",
-            timeout=120,
+            "bash /tmp/safe_clone.sh https://github.com/pallets/markupsafe /opt/target",
+            timeout=300,
         )
-        assert result.exit_code == 0, f"git clone failed: {result.stderr}"
+        assert result.exit_code == 0, f"safe_clone failed: {result.stderr}"
 
         # Run Syft to verify scanner tooling works
         result = ssh_exec(

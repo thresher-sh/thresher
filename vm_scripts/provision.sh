@@ -276,8 +276,18 @@ YARA_RULES_DIR="/opt/yara-rules"
 if [ -d "$YARA_RULES_DIR" ]; then
     log "YARA community rules already present."
 else
-    log "Downloading YARA community rules..."
-    sudo git clone --depth=1 https://github.com/Yara-Rules/rules.git "$YARA_RULES_DIR"
+    log "Downloading YARA community rules (hardened clone)..."
+    sudo git clone \
+        --depth=1 \
+        --no-checkout \
+        --single-branch \
+        -c core.hooksPath=/dev/null \
+        -c core.fsmonitor=false \
+        -c protocol.file.allow=never \
+        -c protocol.ext.allow=never \
+        https://github.com/Yara-Rules/rules.git "$YARA_RULES_DIR"
+    cd "$YARA_RULES_DIR" && sudo GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git checkout
+    cd /
     log "YARA community rules installed to $YARA_RULES_DIR"
 fi
 
