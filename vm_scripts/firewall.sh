@@ -86,12 +86,31 @@ sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
 # ---------------------------------------------------------------------------
-# Allow DNS (UDP port 53) — needed to resolve domain names
+# Allow DNS ONLY to the Lima hostResolver (host gateway)
+# The hostResolver runs on the host machine — the VM cannot tamper with it.
+# All DNS queries must go through it; external DNS servers are blocked.
 # ---------------------------------------------------------------------------
-log "Allowing DNS (UDP 53)..."
-sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
-# Also allow TCP DNS for large responses
-sudo iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+
+# Detect the host gateway IP (Lima's host.lima.internal).
+# For vz (Virtualization.framework) networking the gateway is typically
+# 192.168.5.2; for vzNAT it may differ. Detect dynamically.
+HOST_GW=$(ip route show default 2>/dev/null | awk '{print $3}' | head -1)
+if [ -z "$HOST_GW" ]; then
+    # Fallback: Lima user-mode default
+    HOST_GW="192.168.5.2"
+    log "WARNING: Could not detect default gateway, using fallback: ${HOST_GW}"
+fi
+log "Host gateway (DNS target): ${HOST_GW}"
+
+log "Allowing DNS only to host gateway (${HOST_GW})..."
+sudo iptables -A OUTPUT -p udp --dport 53 -d "$HOST_GW" -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 53 -d "$HOST_GW" -j ACCEPT
+
+# Block and log DNS to all other destinations
+sudo iptables -A OUTPUT -p udp --dport 53 -j LOG --log-prefix "BLOCKED_DNS: " --log-level 4
+sudo iptables -A OUTPUT -p udp --dport 53 -j DROP
+sudo iptables -A OUTPUT -p tcp --dport 53 -j LOG --log-prefix "BLOCKED_DNS: " --log-level 4
+sudo iptables -A OUTPUT -p tcp --dport 53 -j DROP
 
 # ---------------------------------------------------------------------------
 # Whitelist outbound HTTPS (port 443) to specific domains

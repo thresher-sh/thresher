@@ -1,0 +1,13 @@
+#!/bin/bash
+# scanner-docker — Hardcoded Docker wrapper for the scan user.
+# This is the ONLY privileged command the scan user can execute.
+# Owned root:root, mode 755. Accepts no arguments.
+set -euo pipefail
+
+exec /usr/bin/docker run --rm \
+  --network=none \
+  --read-only \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  -v "/home/scanner/work:/work" \
+  scanner-deps:latest /scripts/run.sh

@@ -129,10 +129,20 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
         raise LimaError(f"Firewall script not found: {firewall_script_path}")
     ssh_copy_to(vm_name, str(firewall_script_path), "/tmp/firewall.sh")
 
+    # Copy lockdown scripts (scanner-docker wrapper + lockdown.sh)
+    lockdown_script = _VM_SCRIPTS_DIR / "lockdown.sh"
+    docker_wrapper = _VM_SCRIPTS_DIR / "scanner-docker"
+    if not lockdown_script.exists():
+        raise LimaError(f"Lockdown script not found: {lockdown_script}")
+    if not docker_wrapper.exists():
+        raise LimaError(f"Docker wrapper not found: {docker_wrapper}")
+    ssh_copy_to(vm_name, str(lockdown_script), "/tmp/lockdown.sh")
+    ssh_copy_to(vm_name, str(docker_wrapper), "/tmp/scanner-docker")
+
     # Build env vars for the remote shell
     env = config.ai_env()
 
-    # Run provision.sh
+    # Run provision.sh (installs all tools, builds Docker images)
     stdout, stderr, rc = ssh_exec(
         vm_name,
         "chmod +x /tmp/provision.sh && sudo /tmp/provision.sh",
@@ -144,7 +154,7 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
             f"Provisioning failed (exit {rc}):\nstdout: {stdout}\nstderr: {stderr}"
         )
 
-    # Run firewall.sh
+    # Run firewall.sh (applies iptables whitelist + DNS pinning)
     stdout, stderr, rc = ssh_exec(
         vm_name,
         "chmod +x /tmp/firewall.sh && sudo /tmp/firewall.sh",
@@ -154,6 +164,20 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
     if rc != 0:
         raise LimaError(
             f"Firewall setup failed (exit {rc}):\nstdout: {stdout}\nstderr: {stderr}"
+        )
+
+    # Run lockdown.sh LAST — strips all sudo except the scanner-docker
+    # wrapper. Must be after provision.sh and firewall.sh since those
+    # scripts use sudo extensively.
+    stdout, stderr, rc = ssh_exec(
+        vm_name,
+        "chmod +x /tmp/lockdown.sh && sudo /tmp/lockdown.sh",
+        timeout=60,
+        env=env,
+    )
+    if rc != 0:
+        raise LimaError(
+            f"Lockdown failed (exit {rc}):\nstdout: {stdout}\nstderr: {stderr}"
         )
 
 

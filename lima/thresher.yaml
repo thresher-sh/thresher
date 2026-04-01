@@ -14,6 +14,36 @@ disk: "15GiB"
 
 plain: true
 
+hostResolver:
+  enabled: true
+  hosts:
+    # AI API
+    api.anthropic.com: api.anthropic.com
+    # Source code hosting
+    github.com: github.com
+    api.github.com: api.github.com
+    # Package registries
+    pypi.org: pypi.org
+    files.pythonhosted.org: files.pythonhosted.org
+    registry.npmjs.org: registry.npmjs.org
+    crates.io: crates.io
+    static.crates.io: static.crates.io
+    proxy.golang.org: proxy.golang.org
+    # Vulnerability databases
+    api.first.org: api.first.org
+    services.nvd.nist.gov: services.nvd.nist.gov
+    toolbox-data.anchore.io: toolbox-data.anchore.io
+    grype.anchore.io: grype.anchore.io
+    api.osv.dev: api.osv.dev
+    vuln.go.dev: vuln.go.dev
+    # Scanner tool registries
+    semgrep.dev: semgrep.dev
+    metrics.semgrep.dev: metrics.semgrep.dev
+    ghcr.io: ghcr.io
+    pkg-containers.githubusercontent.com: pkg-containers.githubusercontent.com
+    # Malware definitions
+    database.clamav.net: database.clamav.net
+
 mounts: []
 
 portForwards: []
