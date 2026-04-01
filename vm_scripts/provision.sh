@@ -361,6 +361,61 @@ for bin in cargo-audit; do
 done
 
 # ---------------------------------------------------------------------------
+# AI Analyst investigation tools
+# These give the 8 analyst agents the ability to actually investigate
+# code structure, binary content, hidden data, and obfuscation patterns
+# rather than just reading files and guessing.
+# ---------------------------------------------------------------------------
+log "Installing analyst investigation tools..."
+
+# apt packages
+sudo apt-get install -y -qq \
+    jq \
+    ripgrep \
+    tree \
+    cloc \
+    binutils \
+    xxd \
+    binwalk \
+    libimage-exiftool-perl \
+    shellcheck \
+    qpdf \
+    2>&1 | tail -1
+
+log "Analyst apt packages installed."
+
+# ast-grep — structural code search across all languages (primary tool)
+if command -v ast-grep &>/dev/null || command -v sg &>/dev/null; then
+    log "ast-grep already installed."
+else
+    log "Installing ast-grep via cargo..."
+    cargo install ast-grep --quiet 2>&1 || log "WARNING: ast-grep install failed"
+    # Copy to /usr/local/bin so it's on the default PATH
+    if [ -f "${CARGO_BIN}/ast-grep" ]; then
+        sudo cp "${CARGO_BIN}/ast-grep" /usr/local/bin/
+        sudo chmod +x /usr/local/bin/ast-grep
+        log "ast-grep installed."
+    elif [ -f "${CARGO_BIN}/sg" ]; then
+        sudo cp "${CARGO_BIN}/sg" /usr/local/bin/sg
+        sudo chmod +x /usr/local/bin/sg
+        log "ast-grep (sg) installed."
+    fi
+fi
+
+# tree-sitter CLI — raw AST generation for deep analysis
+if command -v tree-sitter &>/dev/null; then
+    log "tree-sitter CLI already installed."
+else
+    log "Installing tree-sitter-cli via cargo..."
+    cargo install tree-sitter-cli --quiet 2>&1 || log "WARNING: tree-sitter-cli install failed"
+    if [ -f "${CARGO_BIN}/tree-sitter" ]; then
+        sudo cp "${CARGO_BIN}/tree-sitter" /usr/local/bin/
+        sudo chmod +x /usr/local/bin/tree-sitter
+        log "tree-sitter CLI installed."
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Build scanner-deps Docker image
 # ---------------------------------------------------------------------------
 if sudo docker image inspect scanner-deps:latest &>/dev/null; then
