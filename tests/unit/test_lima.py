@@ -170,24 +170,40 @@ class TestCleanWorkingDirs:
     @patch("thresher.vm.lima.ssh_exec", return_value=("", "", 0))
     def test_cleans_all_dirs(self, mock_ssh):
         clean_working_dirs("test-vm")
-        assert mock_ssh.call_count == 4
+        assert mock_ssh.call_count == 6
         # Verify each working dir is cleaned
         cmds = [c[0][1] for c in mock_ssh.call_args_list]
         assert any("/opt/target" in cmd for cmd in cmds)
         assert any("/opt/deps" in cmd for cmd in cmds)
         assert any("/opt/scan-results" in cmd for cmd in cmds)
         assert any("/opt/security-reports" in cmd for cmd in cmds)
+        assert any("/opt/thresher/work/target" in cmd for cmd in cmds)
+        assert any("/opt/thresher/work/deps" in cmd for cmd in cmds)
+
+    @patch("thresher.vm.lima.ssh_exec", return_value=("", "", 0))
+    def test_tries_without_sudo_first(self, mock_ssh):
+        """Primary path should not require sudo; sudo is only a fallback."""
+        clean_working_dirs("test-vm")
+        cmds = [c[0][1] for c in mock_ssh.call_args_list]
+        for cmd in cmds:
+            # mkdir/chmod should try without sudo first, with sudo as || fallback
+            assert "mkdir -p" in cmd
+            assert cmd.index("mkdir -p") < cmd.index("sudo mkdir -p")
 
 
 class TestStopVm:
+    @patch("thresher.vm.lima.ssh_exec", return_value=("", "", 0))
     @patch("thresher.vm.lima._run_limactl")
-    def test_stops_vm(self, mock_run):
+    def test_graceful_stop_syncs_first(self, mock_run, mock_ssh):
         mock_run.return_value = MagicMock(returncode=0)
         stop_vm("test-vm")
-        mock_run.assert_called_once_with(["limactl", "stop", "-f", "test-vm"], timeout=30)
+        # Graceful stop should sync filesystem then stop without -f
+        mock_ssh.assert_called_once_with("test-vm", "sync", timeout=30)
+        mock_run.assert_called_once_with(["limactl", "stop", "test-vm"], timeout=120)
 
+    @patch("thresher.vm.lima.ssh_exec", return_value=("", "", 0))
     @patch("thresher.vm.lima._run_limactl")
-    def test_raises_on_failure(self, mock_run):
+    def test_raises_on_failure(self, mock_run, mock_ssh):
         mock_run.return_value = MagicMock(returncode=1, stderr="error")
         with pytest.raises(LimaError, match="Failed to stop"):
             stop_vm("test-vm")

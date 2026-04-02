@@ -207,9 +207,20 @@ def build(
 
     except KeyboardInterrupt:
         click.echo("\nBuild interrupted.")
+        # Destroy the incomplete VM so scan doesn't try to use it
+        if base_exists():
+            click.echo("Cleaning up incomplete VM...")
+            destroy_vm(BASE_VM_NAME)
         sys.exit(130)
     except Exception as e:
         print_error(str(e))
+        # Destroy the incomplete VM so scan doesn't try to use it
+        if base_exists():
+            click.echo("Cleaning up incomplete VM...")
+            try:
+                destroy_vm(BASE_VM_NAME)
+            except Exception:
+                pass  # best-effort cleanup
         sys.exit(1)
 
 
@@ -609,6 +620,14 @@ def _run_scan(config: ScanConfig) -> None:
         if using_base:
             with FinSpinner("Starting cached base VM"):
                 vm_name = ensure_base_running()
+            # Verify the base VM was fully provisioned before using it
+            from thresher.vm.ssh import ssh_exec as _ssh_exec
+            _, _, rc = _ssh_exec(vm_name, "test -x /usr/local/bin/scanner-docker")
+            if rc != 0:
+                raise RuntimeError(
+                    "Base VM is incomplete (scanner-docker not found). "
+                    "Run `thresher build` to rebuild it."
+                )
             with FinSpinner("Cleaning working directories"):
                 clean_working_dirs(vm_name)
         else:
@@ -721,8 +740,8 @@ def _stop_all() -> None:
     count = 0
     for vm in vms:
         if vm == BASE_VM_NAME:
-            click.echo(f"Force-stopping {vm} (preserving base image)...")
-            sp.run(["limactl", "stop", "-f", vm], capture_output=True, timeout=30)
+            click.echo(f"Stopping {vm} (preserving base image)...")
+            sp.run(["limactl", "stop", vm], capture_output=True, timeout=120)
         else:
             click.echo(f"Destroying {vm}...")
             sp.run(["limactl", "delete", "-f", vm], capture_output=True)

@@ -193,7 +193,14 @@ def run_predep_discovery(
 
     # Write the result to the VM so the container can read it
     try:
-        ssh_exec(vm_name, f"mkdir -p $(dirname {OUTPUT_PATH})")
+        _, _, rc = ssh_exec(vm_name, f"mkdir -p $(dirname {OUTPUT_PATH})")
+        if rc != 0:
+            logger.warning(
+                "Cannot create output directory %s (exit %d) — "
+                "was the VM provisioned correctly?",
+                OUTPUT_PATH, rc,
+            )
+            return result
         # Inject the high_risk_dep flag so the container knows whether
         # to download high-risk entries
         result["high_risk_dep"] = config.high_risk_dep

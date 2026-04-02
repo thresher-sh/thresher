@@ -130,3 +130,23 @@ class TestRunPredepDiscovery:
         result = run_predep_discovery("test-vm", config)
         assert result["hidden_dependencies"] == []
         assert "failed" in result["summary"].lower()
+
+    @patch("thresher.agents.predep.ssh_write_file")
+    @patch("thresher.agents.predep.ssh_exec")
+    def test_handles_mkdir_failure_for_output(self, mock_exec, mock_write, config):
+        """If mkdir for the output dir fails, return result without writing."""
+        mock_exec.side_effect = [
+            SSHResult("", "", 0),  # mkdir .claude
+            SSHResult("", "", 0),  # tmpfs key write
+            SSHResult(SAMPLE_OUTPUT, "", 0),  # claude invocation
+            SSHResult("", "permission denied", 1),  # mkdir for output dir fails
+        ]
+        mock_write.return_value = None
+
+        result = run_predep_discovery("test-vm", config)
+        # Should still return parsed findings even though write failed
+        assert len(result["hidden_dependencies"]) == 2
+        # ssh_write_file should NOT be called for the output (only for prompt + hook)
+        write_calls = [c[0] for c in mock_write.call_args_list]
+        output_writes = [c for c in write_calls if "hidden_deps.json" in c[2]]
+        assert len(output_writes) == 0

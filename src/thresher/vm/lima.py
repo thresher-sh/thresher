@@ -31,7 +31,14 @@ _SSH_TIMEOUT = 300  # seconds (first boot can be slow)
 BASE_VM_NAME = "thresher-base"
 
 # Working directories cleaned between scans when reusing the base VM.
-_WORKING_DIRS = ["/opt/target", "/opt/deps", "/opt/scan-results", "/opt/security-reports"]
+_WORKING_DIRS = [
+    "/opt/target",
+    "/opt/deps",
+    "/opt/scan-results",
+    "/opt/security-reports",
+    "/opt/thresher/work/target",
+    "/opt/thresher/work/deps",
+]
 
 
 class LimaError(Exception):
@@ -337,14 +344,32 @@ def clean_working_dirs(vm_name: str) -> None:
     artefacts leak across runs.
     """
     for d in _WORKING_DIRS:
-        ssh_exec(vm_name, f"sudo rm -rf {d} && sudo mkdir -p {d} && sudo chmod 777 {d}")
+        # Delete all contents (including dotfiles like .git) without
+        # removing the directory itself. Try without sudo first (works
+        # post-lockdown when dirs exist with 777). Fall back to sudo
+        # for dirs that need creation (works pre-lockdown or on
+        # imported VMs where lockdown didn't run).
+        ssh_exec(vm_name, (
+            f"find {d} -mindepth 1 -delete 2>/dev/null; "
+            f"mkdir -p {d} 2>/dev/null || sudo mkdir -p {d} 2>/dev/null; "
+            f"chmod 777 {d} 2>/dev/null || sudo chmod 777 {d} 2>/dev/null; "
+            f"true"
+        ))
     logger.info("Cleaned working directories in %s", vm_name)
 
 
 def stop_vm(vm_name: str) -> None:
-    """Force-stop a Lima VM without deleting it."""
-    logger.info("Force-stopping VM %s", vm_name)
-    result = _run_limactl(["limactl", "stop", "-f", vm_name], timeout=30)
+    """Stop a Lima VM without deleting it.
+
+    Uses graceful shutdown with a filesystem sync to ensure all disk
+    writes (especially Docker image layers) are flushed before stopping.
+    """
+    logger.info("Stopping VM %s", vm_name)
+    try:
+        ssh_exec(vm_name, "sync", timeout=30)
+    except Exception:
+        pass  # best-effort; stop will proceed regardless
+    result = _run_limactl(["limactl", "stop", vm_name], timeout=120)
     if result.returncode != 0:
         raise LimaError(f"Failed to stop VM '{vm_name}': {result.stderr}")
 
