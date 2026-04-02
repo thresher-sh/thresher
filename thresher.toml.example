@@ -20,7 +20,7 @@ tmux = false
 [vm]
 cpus = 4
 memory = 8   # GB
-disk = 15    # GB
+disk = 30    # GB
 
 [limits]
 # Host boundary hardening limits. These control the maximum sizes of

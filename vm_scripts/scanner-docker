@@ -7,6 +7,7 @@ set -euo pipefail
 exec /usr/bin/docker run --rm \
   --network=none \
   --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=512m \
   --cap-drop=ALL \
   --security-opt=no-new-privileges \
   -v "/opt/thresher/work:/work" \

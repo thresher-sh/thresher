@@ -10,7 +10,7 @@ images:
 
 cpus: 4
 memory: "8GiB"
-disk: "15GiB"
+disk: "30GiB"
 
 plain: true
 

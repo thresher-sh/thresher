@@ -22,3 +22,16 @@ Validate these things from github issue todo:
     Activitiy/Risk checker - Popularity, last pushed change, maintainer activities, # of stale pull requests, etc...
     Commit history, recently (any new packages added? How old are those packages?)
     Scan for remote downloads hidden within special tools like the axios hack
+
+
+
+---
+
+AI Benchmark
+- Tokens In
+- Tokens Out
+- Tool Calls
+- Runtime
+etc...
+
+So we can calculate costs etc and impact and average cost to run them, then build configurations for max turns etc into the thresher.toml file so folks can tune to what they want to pay...

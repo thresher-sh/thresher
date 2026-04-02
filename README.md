@@ -250,7 +250,7 @@ P0 or Critical = **DO NOT USE**. High only = **CAUTION**. Medium and below = **G
 - `ANTHROPIC_API_KEY` or `claude login` (unless `--skip-ai`)
 - [tmux](https://github.com/tmux/tmux) (`brew install tmux`) -- optional
 
-The VM needs ~15 GB disk. Configurable via `--disk` or `thresher.toml`.
+The VM needs ~30 GB disk. Configurable via `--disk` or `thresher.toml`.
 
 ---
 
