@@ -277,10 +277,10 @@ def run_scan(config: ScanConfig) -> None:
         if not config.skip_ai:
             # Stage 5: AI analysis (findings stay in VM)
             print_stage(5, total_stages, "Running AI analysis agents...")
-            from thresher.agents.analyst import run_analysis
+            from thresher.agents.analysts import run_all_analysts
             from thresher.agents.adversarial import run_adversarial_verification
 
-            run_analysis(vm_name, config)
+            run_all_analysts(vm_name, config)
             run_adversarial_verification(vm_name, config)
 
         # Final stage: Generate report (reads all data from within VM)

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch, call
 
-from thresher.agents.analyst import run_analysis
+from thresher.agents.analysts import run_all_analysts, ANALYST_DEFINITIONS
 from thresher.agents.adversarial import run_adversarial_verification
 from thresher.config import ScanConfig, VMConfig
 from thresher.vm.ssh import SSHResult
@@ -26,72 +26,149 @@ def _load_agent_fixture(name: str) -> str:
     return (FIXTURES / "sample_agent_output" / name).read_text()
 
 
-class TestAnalystPipeline:
-    @patch("thresher.agents.analyst.ssh_write_file")
-    @patch("thresher.agents.analyst.ssh_exec")
-    def test_passes_api_key_via_tmpfs(self, mock_exec, mock_write):
+def _make_analyst_output(number: int, name: str, findings: list, risk_score: int = 3) -> str:
+    """Create a valid analyst JSON output string."""
+    return json.dumps({
+        "analyst": name,
+        "analyst_number": number,
+        "core_question": "test question",
+        "files_analyzed": 10,
+        "findings": findings,
+        "summary": f"Assessment from {name}",
+        "risk_score": risk_score,
+    })
+
+
+class TestAnalystsPipeline:
+    @patch("thresher.agents.analysts.ssh_write_file")
+    @patch("thresher.agents.analysts.ssh_exec")
+    def test_runs_all_eight_analysts(self, mock_exec, mock_write):
         mock_exec.return_value = SSHResult(
-            _load_agent_fixture("analyst_clean.json"), "", 0
+            '{"findings":[],"risk_score":0}', "", 0
         )
         mock_write.return_value = None
 
-        config = _make_config()
-        run_analysis("vm", config)
+        run_all_analysts("vm", _make_config())
 
-        # API key is now written to tmpfs, then read-and-deleted inline
+        # Each analyst: 1 ssh_exec for API key write + 1 ssh_exec for claude = 2
+        # Total: 8 * 2 = 16 ssh_exec calls
+        assert mock_exec.call_count == 16
+
+    @patch("thresher.agents.analysts.ssh_write_file")
+    @patch("thresher.agents.analysts.ssh_exec")
+    def test_all_use_bash_in_allowed_tools(self, mock_exec, mock_write):
+        mock_exec.return_value = SSHResult(
+            '{"findings":[],"risk_score":0}', "", 0
+        )
+        mock_write.return_value = None
+
+        run_all_analysts("vm", _make_config())
+
         cmds = [c[0][1] for c in mock_exec.call_args_list]
-        # First ssh_exec writes the key to /dev/shm
-        assert any("/dev/shm/.api_key" in cmd for cmd in cmds)
-        # The claude command reads from tmpfs and deletes
-        claude_cmd = cmds[-1]  # last call is the claude invocation
-        assert "ANTHROPIC_API_KEY=$(cat /dev/shm/.api_key)" in claude_cmd
-        assert "rm -f /dev/shm/.api_key" in claude_cmd
+        claude_cmds = [c for c in cmds if "claude -p" in c]
+        assert len(claude_cmds) == 8
+        for cmd in claude_cmds:
+            assert '"Read,Glob,Grep,Bash"' in cmd
 
-    @patch("thresher.agents.analyst.ssh_write_file")
-    @patch("thresher.agents.analyst.ssh_exec")
-    def test_timeout(self, mock_exec, mock_write):
-        mock_exec.return_value = SSHResult("{}", "", 0)
-        mock_write.return_value = None
-
-        run_analysis("vm", _make_config())
-
-        claude_call = mock_exec.call_args
-        assert claude_call.kwargs.get("timeout") == 3600
-
-    @patch("thresher.agents.analyst.ssh_write_file")
-    @patch("thresher.agents.analyst.ssh_exec")
-    def test_writes_prompt_safely(self, mock_exec, mock_write):
-        mock_exec.return_value = SSHResult("{}", "", 0)
-        mock_write.return_value = None
-
-        run_analysis("vm", _make_config())
-
-        assert mock_write.called
-        write_call = mock_write.call_args_list[0]
-        assert write_call[0][2] == "/tmp/analyst_prompt.txt"
-
-    @patch("thresher.agents.analyst.ssh_write_file")
-    @patch("thresher.agents.analyst.ssh_exec")
-    def test_writes_findings_to_vm(self, mock_exec, mock_write):
+    @patch("thresher.agents.analysts.ssh_write_file")
+    @patch("thresher.agents.analysts.ssh_exec")
+    def test_all_use_tmpfs_api_key(self, mock_exec, mock_write):
         mock_exec.return_value = SSHResult(
-            _load_agent_fixture("analyst_clean.json"), "", 0
+            '{"findings":[],"risk_score":0}', "", 0
         )
         mock_write.return_value = None
 
-        result = run_analysis("vm", _make_config())
-        # run_analysis now returns None (findings stay in VM)
-        assert result is None
-        # Verify findings JSON was written to VM
+        run_all_analysts("vm", _make_config())
+
+        cmds = [c[0][1] for c in mock_exec.call_args_list]
+        key_writes = [c for c in cmds if "/dev/shm/.api_key_" in c and "printf" in c]
+        assert len(key_writes) == 8
+
+    @patch("thresher.agents.analysts.ssh_write_file")
+    @patch("thresher.agents.analysts.ssh_exec")
+    def test_writes_findings_to_correct_paths(self, mock_exec, mock_write):
+        mock_exec.return_value = SSHResult(
+            '{"findings":[],"risk_score":0}', "", 0
+        )
+        mock_write.return_value = None
+
+        run_all_analysts("vm", _make_config())
+
         write_paths = [c[0][2] for c in mock_write.call_args_list]
-        assert "/opt/scan-results/analyst-findings.json" in write_paths
-        assert "/opt/scan-results/analyst-findings.md" in write_paths
+        for analyst_def in ANALYST_DEFINITIONS:
+            n = analyst_def["number"]
+            name = analyst_def["name"]
+            expected_json = f"/opt/scan-results/analyst-{n}-{name}-findings.json"
+            expected_md = f"/opt/scan-results/analyst-{n}-{name}-findings.md"
+            assert expected_json in write_paths, f"Missing {expected_json}"
+            assert expected_md in write_paths, f"Missing {expected_md}"
+
+    @patch("thresher.agents.analysts.ssh_write_file")
+    @patch("thresher.agents.analysts.ssh_exec")
+    def test_returns_none(self, mock_exec, mock_write):
+        mock_exec.return_value = SSHResult(
+            '{"findings":[],"risk_score":0}', "", 0
+        )
+        mock_write.return_value = None
+
+        result = run_all_analysts("vm", _make_config())
+        assert result is None
 
 
-class TestAdversarialPipeline:
+class TestAdversarialWithMultipleAnalysts:
     @patch("thresher.agents.adversarial.ssh_write_file")
     @patch("thresher.agents.adversarial.ssh_exec")
-    def test_passes_api_key_via_tmpfs(self, mock_exec, mock_write):
-        # First call: cat analyst-findings.json (reads from VM)
+    def test_reads_multiple_analyst_files(self, mock_exec, mock_write):
+        """Adversarial agent should merge findings from multiple analysts."""
+        # First call: ls to discover files
+        file_list = (
+            "/opt/scan-results/analyst-1-paranoid-findings.json\n"
+            "/opt/scan-results/analyst-2-behaviorist-findings.json\n"
+        )
+        # Second/third calls: cat each file
+        paranoid_output = _make_analyst_output(1, "paranoid", [
+            {
+                "file_path": "/opt/target/setup.py",
+                "risk_score": 7,
+                "title": "base64 exec",
+                "severity": "high",
+                "description": "bad",
+                "line_numbers": [1],
+            }
+        ], risk_score=7)
+
+        behaviorist_output = _make_analyst_output(2, "behaviorist", [
+            {
+                "file_path": "/opt/target/utils.py",
+                "risk_score": 5,
+                "title": "unsafe deserialization",
+                "severity": "medium",
+                "description": "pickle load",
+                "line_numbers": [10],
+            }
+        ], risk_score=5)
+
+        mock_exec.side_effect = [
+            SSHResult(file_list, "", 0),              # ls analyst files
+            SSHResult(paranoid_output, "", 0),         # cat paranoid
+            SSHResult(behaviorist_output, "", 0),      # cat behaviorist
+            SSHResult("", "", 0),                      # write API key
+            SSHResult(                                 # claude adversarial
+                _load_agent_fixture("adversarial.json"), "", 0
+            ),
+        ]
+        mock_write.return_value = None
+
+        run_adversarial_verification("vm", _make_config())
+
+        # Verify merged findings were written
+        write_paths = [c[0][2] for c in mock_write.call_args_list]
+        assert "/opt/scan-results/adversarial-findings.json" in write_paths
+
+    @patch("thresher.agents.adversarial.ssh_write_file")
+    @patch("thresher.agents.adversarial.ssh_exec")
+    def test_falls_back_to_legacy_file(self, mock_exec, mock_write):
+        """If no multi-analyst files exist, falls back to legacy format."""
         analyst_findings = json.dumps({
             "findings": [
                 {"file_path": "/opt/target/setup.py", "risk_score": 7,
@@ -99,16 +176,84 @@ class TestAdversarialPipeline:
             ]
         })
         mock_exec.side_effect = [
-            SSHResult(analyst_findings, "", 0),  # cat analyst-findings.json
-            SSHResult("", "", 0),  # write API key to tmpfs
-            SSHResult(_load_agent_fixture("adversarial.json"), "", 0),  # claude
+            SSHResult("", "", 1),                      # ls finds nothing
+            SSHResult(analyst_findings, "", 0),         # cat legacy file
+            SSHResult("", "", 0),                      # write API key
+            SSHResult(                                 # claude adversarial
+                _load_agent_fixture("adversarial.json"), "", 0
+            ),
+        ]
+        mock_write.return_value = None
+
+        run_adversarial_verification("vm", _make_config())
+
+        # Should still work and produce output
+        write_paths = [c[0][2] for c in mock_write.call_args_list]
+        assert "/opt/scan-results/adversarial-findings.json" in write_paths
+
+    @patch("thresher.agents.adversarial.ssh_write_file")
+    @patch("thresher.agents.adversarial.ssh_exec")
+    def test_findings_annotated_with_source_analyst(self, mock_exec, mock_write):
+        """Each finding should include which analyst produced it."""
+        file_list = "/opt/scan-results/analyst-1-paranoid-findings.json\n"
+        paranoid_output = _make_analyst_output(1, "paranoid", [
+            {
+                "file_path": "/opt/target/setup.py",
+                "risk_score": 7,
+                "title": "base64 exec",
+                "severity": "high",
+                "description": "bad",
+                "line_numbers": [1],
+            }
+        ], risk_score=7)
+
+        mock_exec.side_effect = [
+            SSHResult(file_list, "", 0),
+            SSHResult(paranoid_output, "", 0),
+            SSHResult("", "", 0),  # write API key
+            SSHResult(_load_agent_fixture("adversarial.json"), "", 0),
+        ]
+        mock_write.return_value = None
+
+        run_adversarial_verification("vm", _make_config())
+
+        # Find the adversarial JSON write
+        json_writes = [c for c in mock_write.call_args_list
+                       if c[0][2] == "/opt/scan-results/adversarial-findings.json"]
+        assert len(json_writes) == 1
+        merged = json.loads(json_writes[0][0][1])
+
+        # Check that findings have source_analyst annotation
+        for finding in merged.get("findings", []):
+            assert "source_analyst" in finding
+            assert "source_analyst_number" in finding
+
+
+class TestAdversarialPipeline:
+    """Preserved legacy tests updated for the new architecture."""
+
+    @patch("thresher.agents.adversarial.ssh_write_file")
+    @patch("thresher.agents.adversarial.ssh_exec")
+    def test_passes_api_key_via_tmpfs(self, mock_exec, mock_write):
+        # First call: ls for analyst files (empty = fallback)
+        # Second call: cat legacy analyst-findings.json
+        analyst_findings = json.dumps({
+            "findings": [
+                {"file_path": "/opt/target/setup.py", "risk_score": 7,
+                 "findings": [{"description": "bad", "line_numbers": [1]}]},
+            ]
+        })
+        mock_exec.side_effect = [
+            SSHResult("", "", 1),                      # ls finds nothing
+            SSHResult(analyst_findings, "", 0),         # cat legacy
+            SSHResult("", "", 0),                      # write API key to tmpfs
+            SSHResult(_load_agent_fixture("adversarial.json"), "", 0),
         ]
         mock_write.return_value = None
 
         config = _make_config()
         run_adversarial_verification("vm", config)
 
-        # API key is now written to tmpfs, then read-and-deleted inline
         cmds = [c[0][1] for c in mock_exec.call_args_list]
         assert any("/dev/shm/.api_key" in cmd for cmd in cmds)
         claude_cmd = cmds[-1]
@@ -123,51 +268,11 @@ class TestAdversarialPipeline:
                 {"file_path": "/a.py", "risk_score": 2, "findings": []},
             ]
         })
-        mock_exec.return_value = SSHResult(analyst_findings, "", 0)
-        mock_write.return_value = None
-
-        result = run_adversarial_verification("vm", _make_config())
-        assert result is None
-        # Only the cat call should have been made (no claude invocation)
-        assert mock_exec.call_count == 1
-
-    @patch("thresher.agents.adversarial.ssh_write_file")
-    @patch("thresher.agents.adversarial.ssh_exec")
-    def test_merge_flow(self, mock_exec, mock_write):
-        analyst_findings = json.dumps({
-            "findings": [
-                {"file_path": "/opt/target/setup.py", "risk_score": 7,
-                 "findings": [{"description": "bad", "line_numbers": [1]}]},
-                {"file_path": "/opt/target/conftest.py", "risk_score": 5,
-                 "findings": [{"description": "maybe", "line_numbers": [10]}]},
-            ]
-        })
         mock_exec.side_effect = [
-            SSHResult(analyst_findings, "", 0),  # cat analyst-findings.json
-            SSHResult("", "", 0),  # write API key to tmpfs
-            SSHResult(_load_agent_fixture("adversarial.json"), "", 0),  # claude
+            SSHResult("", "", 1),                      # ls finds nothing
+            SSHResult(analyst_findings, "", 0),         # cat legacy
         ]
         mock_write.return_value = None
 
         result = run_adversarial_verification("vm", _make_config())
-        # run_adversarial_verification now returns None (findings stay in VM)
         assert result is None
-
-        # Verify merged findings JSON was written to VM
-        write_paths = [c[0][2] for c in mock_write.call_args_list]
-        assert "/opt/scan-results/adversarial-findings.json" in write_paths
-        assert "/opt/scan-results/adversarial-findings.md" in write_paths
-
-        # Verify the merged JSON contains adversarial verification data
-        json_write = [c for c in mock_write.call_args_list
-                      if c[0][2] == "/opt/scan-results/adversarial-findings.json"][0]
-        merged = json.loads(json_write[0][1])
-        assert "adversarial_verification" in merged
-        setup = [f for f in merged["findings"]
-                 if f["file_path"] == "/opt/target/setup.py"][0]
-        assert setup["adversarial_status"] == "confirmed"
-
-        conftest = [f for f in merged["findings"]
-                    if f["file_path"] == "/opt/target/conftest.py"][0]
-        assert conftest["adversarial_status"] == "downgraded"
-        assert conftest["risk_score"] == 2

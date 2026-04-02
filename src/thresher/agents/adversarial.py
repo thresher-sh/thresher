@@ -247,23 +247,76 @@ def _merge_adversarial_results(
 
 
 def _read_analyst_findings_from_vm(vm_name: str) -> dict[str, Any]:
-    """Read the analyst findings JSON from within the VM.
+    """Read all analyst findings JSON files from within the VM.
 
-    Returns the parsed findings dict, or an empty findings structure
-    if the file cannot be read or parsed.
+    Discovers analyst-*-findings.json files in /opt/scan-results/,
+    reads each one, and merges them into a combined findings structure.
+    Each finding is annotated with which analyst produced it.
+
+    Returns the merged findings dict, or an empty findings structure
+    if no files can be read or parsed.
     """
+    combined_findings: list[dict[str, Any]] = []
+
     try:
-        result = ssh_exec(vm_name, "cat /opt/scan-results/analyst-findings.json")
-        if result.exit_code != 0:
-            logger.warning("Could not read analyst findings from VM")
-            return {"findings": []}
-        parsed = safe_json_loads(result.stdout, source="analyst-findings.json")
-        if parsed is None:
-            return {"findings": []}
-        return parsed
+        # List all analyst findings files
+        result = ssh_exec(
+            vm_name,
+            "ls /opt/scan-results/analyst-*-findings.json 2>/dev/null",
+        )
+        if result.exit_code != 0 or not result.stdout.strip():
+            # Fall back to legacy single-analyst file
+            logger.info("No multi-analyst files found, trying legacy analyst-findings.json")
+            try:
+                result = ssh_exec(vm_name, "cat /opt/scan-results/analyst-findings.json")
+                if result.exit_code != 0:
+                    logger.warning("Could not read analyst findings from VM")
+                    return {"findings": []}
+                parsed = safe_json_loads(result.stdout, source="analyst-findings.json")
+                if parsed is None:
+                    return {"findings": []}
+                return parsed
+            except Exception:
+                logger.warning("Failed to read legacy analyst findings", exc_info=True)
+                return {"findings": []}
+
+        files = result.stdout.strip().splitlines()
+        logger.info("Found %d analyst findings files to merge", len(files))
+
+        for filepath in files:
+            filepath = filepath.strip()
+            if not filepath:
+                continue
+            try:
+                file_result = ssh_exec(vm_name, f"cat {filepath}")
+                if file_result.exit_code != 0:
+                    logger.warning("Could not read %s", filepath)
+                    continue
+                parsed = safe_json_loads(
+                    file_result.stdout,
+                    source=filepath.rsplit("/", 1)[-1],
+                )
+                if parsed is None:
+                    continue
+
+                analyst_name = parsed.get("analyst", "unknown")
+                analyst_number = parsed.get("analyst_number", 0)
+
+                # Annotate each finding with the producing analyst
+                for finding in parsed.get("findings", []):
+                    if isinstance(finding, dict):
+                        finding["source_analyst"] = analyst_name
+                        finding["source_analyst_number"] = analyst_number
+                        combined_findings.append(finding)
+
+            except Exception:
+                logger.warning("Failed to read %s", filepath, exc_info=True)
+
     except Exception:
-        logger.warning("Failed to read analyst findings from VM", exc_info=True)
+        logger.warning("Failed to list analyst findings from VM", exc_info=True)
         return {"findings": []}
+
+    return {"findings": combined_findings}
 
 
 def run_adversarial_verification(
