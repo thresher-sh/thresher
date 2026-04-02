@@ -170,6 +170,42 @@
     z-index: 1;
   }
 
+  /* ── Copy tooltip ──────────────────────── */
+  .copy-tooltip {
+    position: absolute;
+    right: -80px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--violet);
+    color: var(--deep-black);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 5px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, transform 0.15s;
+    transform: translateY(-50%) translateX(4px);
+  }
+
+  .copy-tooltip::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: var(--violet);
+    border-left: 0;
+  }
+
+  .copy-tooltip.show {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+
   .hero-sub {
     margin-top: 40px;
     color: var(--steel);
@@ -465,6 +501,24 @@
     .install-box { padding: 16px 20px; }
     .install-box .cmd { font-size: 14px; }
     .nav-links { display: none; }
+    .copy-tooltip {
+      right: auto;
+      left: 50%;
+      top: -36px;
+      transform: translateX(-50%);
+    }
+    .copy-tooltip::before {
+      left: 50%;
+      top: auto;
+      bottom: -5px;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--violet);
+      border-bottom: 0;
+    }
+    .copy-tooltip.show {
+      transform: translateX(-50%) translateY(0);
+    }
   }
 
   @media (max-width: 480px) {
@@ -482,7 +536,7 @@
     <li><a href="#features">Features</a></li>
     <li><a href="#how-it-works">How It Works</a></li>
     <li><a href="#analysts">Analysts</a></li>
-    <li><a href="https://github.com/shadowcodex/thresher">GitHub</a></li>
+    <li><a href="https://github.com/thresher-sh/thresher">GitHub</a></li>
   </ul>
 </nav>
 
@@ -506,14 +560,15 @@
   <h1>thresher</h1>
   <p class="tagline">Separate the safe from the dangerous.</p>
 
-  <div class="install-box" onclick="navigator.clipboard.writeText('curl -fsSL thresher.sh/install | bash')">
+  <div class="install-box" onclick="copyCmd(this)">
     <span class="prompt">$</span>
     <span class="cmd">curl -fsSL <span class="domain">thresher.sh/install</span> | bash</span>
+    <span class="copy-tooltip">copied!</span>
   </div>
   <div class="install-hint">click to copy</div>
 
   <p class="hero-sub">
-    Open source &middot; <a href="https://github.com/shadowcodex/thresher">View on GitHub</a>
+    Open source &middot; <a href="https://github.com/thresher-sh/thresher">View on GitHub</a>
   </p>
 </section>
 
@@ -714,15 +769,27 @@
 
   <h2>What's hiding in your dependencies?</h2>
 
-  <div class="install-box" onclick="navigator.clipboard.writeText('curl -fsSL thresher.sh/install | bash')" style="margin: 0 auto;">
+  <div class="install-box" onclick="copyCmd(this)" style="margin: 0 auto;">
     <span class="prompt">$</span>
     <span class="cmd">curl -fsSL <span class="domain">thresher.sh/install</span> | bash</span>
+    <span class="copy-tooltip">copied!</span>
   </div>
 </section>
 
 <!-- ── Footer ──────────────────────────────────────────── -->
 <footer>
   <div class="footer-shark" id="swim-line"></div>
+<script>
+function copyCmd(el) {
+  var cmd = 'curl -fsSL thresher.sh/install | bash';
+  navigator.clipboard.writeText(cmd).then(function() {
+    var tip = el.querySelector('.copy-tooltip');
+    if (!tip) return;
+    tip.classList.add('show');
+    setTimeout(function() { tip.classList.remove('show'); }, 1500);
+  });
+}
+</script>
 <script>
 (function() {
   const el = document.getElementById('swim-line');
@@ -747,8 +814,8 @@
 })();
 </script>
   <p>
-    <a href="https://github.com/shadowcodex/thresher">GitHub</a> &middot;
-    <a href="#">Docs</a> &middot;
+    <a href="https://github.com/thresher-sh/thresher">GitHub</a> &middot;
+    <a href="https://github.com/thresher-sh/thresher/tree/main/docs">Docs</a> &middot;
     MIT License
   </p>
 </footer>
