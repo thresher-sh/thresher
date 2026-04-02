@@ -6,44 +6,58 @@ echo '  $ _/|'
 echo ''
 echo 'Thresher — Supply chain security scanner'
 echo ''
-echo 'Installing from source...'
+echo 'Automated installer coming soon.'
 echo ''
-
-if ! command -v git &>/dev/null; then
-  echo 'ERROR: git is required. Install it first.'
-  exit 1
-fi
-
-if ! command -v pip &>/dev/null && ! command -v pip3 &>/dev/null; then
-  echo 'ERROR: pip is required. Install Python 3.11+ first.'
-  exit 1
-fi
-
-# Lima is required for VM isolation
-if ! command -v limactl &>/dev/null; then
-  echo 'Lima not found — installing...'
-  if command -v brew &>/dev/null; then
-    brew install lima
-  else
-    echo 'ERROR: Lima is required but Homebrew is not available.'
-    echo 'Install Lima manually: https://lima-vm.io'
-    exit 1
-  fi
-else
-  echo 'Lima found: '"$(limactl --version 2>/dev/null || echo 'ok')"
-fi
-
-PIP=$(command -v pip3 || command -v pip)
-
-git clone https://github.com/thresher-sh/thresher.git ~/.thresher-src 2>/dev/null || {
-  echo 'Updating existing installation...'
-  cd ~/.thresher-src && git pull
-}
-
-cd ~/.thresher-src
-$PIP install -e . --quiet
-
+echo 'For now, install from source:'
 echo ''
-echo 'Installed! Run:'
+echo '  git clone https://github.com/thresher-sh/thresher.git'
+echo '  cd thresher'
+echo '  pip install -e .'
+echo ''
+echo 'Requirements: Python 3.11+, Lima (brew install lima)'
+echo ''
+echo 'Then run:'
 echo '  thresher https://github.com/owner/repo'
 echo ''
+exit 0
+
+# ── Future automated installer (uncomment when ready) ──────────────
+
+# if ! command -v git &>/dev/null; then
+#   echo 'ERROR: git is required. Install it first.'
+#   exit 1
+# fi
+
+# if ! command -v pip &>/dev/null && ! command -v pip3 &>/dev/null; then
+#   echo 'ERROR: pip is required. Install Python 3.11+ first.'
+#   exit 1
+# fi
+
+# # Lima is required for VM isolation
+# if ! command -v limactl &>/dev/null; then
+#   echo 'Lima not found — installing...'
+#   if command -v brew &>/dev/null; then
+#     brew install lima
+#   else
+#     echo 'ERROR: Lima is required but Homebrew is not available.'
+#     echo 'Install Lima manually: https://lima-vm.io'
+#     exit 1
+#   fi
+# else
+#   echo 'Lima found: '"$(limactl --version 2>/dev/null || echo 'ok')"
+# fi
+
+# PIP=$(command -v pip3 || command -v pip)
+
+# git clone https://github.com/thresher-sh/thresher.git ~/.thresher-src 2>/dev/null || {
+#   echo 'Updating existing installation...'
+#   cd ~/.thresher-src && git pull
+# }
+
+# cd ~/.thresher-src
+# $PIP install -e . --quiet
+
+# echo ''
+# echo 'Installed! Run:'
+# echo '  thresher https://github.com/owner/repo'
+# echo ''
