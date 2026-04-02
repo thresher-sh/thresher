@@ -40,3 +40,8 @@ So we can calculate costs etc and impact and average cost to run them, then buil
 ----
 
 Shallow git clone breaks forensic abilities
+
+
+-----
+
+Figure out safe way to proxy git ssh token to access private repositories...
