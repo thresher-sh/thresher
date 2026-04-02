@@ -204,7 +204,8 @@ Test conventions:
 ## Git Conventions
 
 - `scanner-docker` wrapper: do not rename (internal VM detail)
-- `docs/v2-planning/`: reference specs, do not modify during implementation
+- `documentation/v2-planning/`: reference specs, do not modify during implementation
+- `docs/`: GitHub Pages site (index.html, branding.html) — not dev docs
 - Config files: `thresher.toml` (active), `thresher.toml.example` (template)
 
 ## Testing
