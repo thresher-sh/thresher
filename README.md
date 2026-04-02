@@ -88,11 +88,11 @@ uv run thresher https://github.com/owner/repo --skip-ai
 | `--cpus N` | 4 | VM CPU count |
 | `--memory N` | 8 | VM memory in GiB |
 | `--disk N` | 50 | VM disk in GiB |
-| `--no-tmux` | off | Disable tmux split-pane UI |
+| `--tmux` | off | Enable tmux split-pane UI |
 
 ### Tmux UI
 
-Scans launch in a tmux split-pane by default (left: scan, right: logs).
+Pass `--tmux` or set `tmux = true` in config to launch in a tmux split-pane (left: scan, right: logs).
 
 | Key | Action |
 |-----|--------|
@@ -100,8 +100,6 @@ Scans launch in a tmux split-pane by default (left: scan, right: logs).
 | `Ctrl-b z` | Zoom pane (toggle) |
 | `Ctrl-b [` | Scroll mode (`q` to exit) |
 | `Ctrl-b q` | Quit session |
-
-Disable with `--no-tmux` or `tmux = false` in config.
 
 ### Configuration
 
@@ -111,7 +109,7 @@ Copy `thresher.toml.example` to `thresher.toml`. CLI flags override config value
 model = "sonnet"
 depth = 2
 output_dir = "./thresher-reports"
-tmux = true
+tmux = false
 
 [vm]
 cpus = 4

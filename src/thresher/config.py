@@ -86,7 +86,7 @@ class ScanConfig:
     oauth_token: str = ""
     model: str = "sonnet"
     log_dir: str = ""
-    tmux: bool = True
+    tmux: bool = False
     high_risk_dep: bool = False
 
     @property

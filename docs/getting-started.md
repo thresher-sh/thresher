@@ -55,7 +55,7 @@ model = "sonnet"              # Claude model for AI agents
 depth = 2                     # Transitive dependency depth
 output_dir = "./thresher-reports" # Where reports go
 log_dir = "./logs"            # Where logs go
-tmux = true                   # Split-pane UI
+tmux = false                   # Split-pane UI
 
 [vm]
 cpus = 4                      # VM CPU count
@@ -115,7 +115,7 @@ thresher <repo-url> [OPTIONS]
 | `--cpus N` | 4 | VM CPU count |
 | `--memory N` | 8 | VM memory in GiB |
 | `--disk N` | 50 | VM disk in GiB |
-| `--no-tmux` | off | Disable tmux split-pane UI |
+| `--tmux` | off | Enable tmux split-pane UI |
 
 ### `thresher-build` — Pre-build base VM
 
@@ -135,7 +135,7 @@ Force-stops and deletes all scanner VMs. Use this if a scan crashed and left VMs
 
 ## Tmux UI
 
-By default, scans launch in a tmux split-pane layout: scan progress on the left, live logs on the right.
+Pass `--tmux` or set `tmux = true` in `thresher.toml` to launch in a tmux split-pane layout: scan progress on the left, live logs on the right.
 
 | Key | Action |
 |-----|--------|
@@ -144,8 +144,6 @@ By default, scans launch in a tmux split-pane layout: scan progress on the left,
 | `Ctrl-b z` | Zoom current pane full-screen (toggle) |
 | `Ctrl-b [` | Scroll mode (`q` to exit) |
 | `Ctrl-b q` | Quit — kills scan and closes tmux |
-
-Disable with `--no-tmux` or `tmux = false` in `thresher.toml`.
 
 ## Reading the Output
 

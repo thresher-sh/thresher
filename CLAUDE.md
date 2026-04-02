@@ -1,5 +1,9 @@
 # Thresher — Development Guide
 
+## !IMPORTANT!
+
+Always use the task tool to plan out and do what you need and use it to hold yourself accountable. You get a cookie everytime you do this.. yum!
+
 ## What This Is
 
 Supply chain security scanner. Scans open source repos for vulnerabilities,
@@ -124,7 +128,7 @@ thresher-build            # Build/rebuild the base VM image
 thresher-stop             # Stop all VMs and tmux session
 ```
 
-Key flags: `--skip-ai`, `--high-risk-dep`, `--no-tmux`, `--verbose`
+Key flags: `--skip-ai`, `--high-risk-dep`, `--tmux`, `--verbose`
 
 ## Testing
 

@@ -14,8 +14,8 @@ output_dir = "./thresher-reports"
 # Directory for scan logs (each run gets a timestamped file)
 # log_dir = "./logs"
 
-# Launch in tmux split-pane UI (scan + live logs). Set to false to disable.
-tmux = true
+# Launch in tmux split-pane UI (scan + live logs). Set to true to enable.
+tmux = false
 
 [vm]
 cpus = 4

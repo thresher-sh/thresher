@@ -8,5 +8,5 @@
   x 6. deps.dev + registry metadata
   x 7. GuardDog on dep source
   x 8. Provision.sh additions (analyst tooling)
-  9. 8-analyst architecture
+  x 9. 8-analyst architecture
   10. branding

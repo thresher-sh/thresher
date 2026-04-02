@@ -27,7 +27,7 @@ class TestCLI:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         runner = CliRunner()
         with patch("thresher.cli.run_scan") as mock_scan:
-            result = runner.invoke(main, ["https://github.com/x/y", "--skip-ai", "--no-tmux"])
+            result = runner.invoke(main, ["https://github.com/x/y", "--skip-ai"])
         # Should not error on missing key
         assert result.exit_code == 0
         assert mock_scan.called
@@ -46,7 +46,6 @@ class TestCLI:
                 "--depth", "5",
                 "--output", "/tmp/out",
                 "--verbose",
-                "--no-tmux",
             ])
         assert result.exit_code == 0
         config = mock_scan.call_args[0][0]
@@ -61,14 +60,14 @@ class TestCLI:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         runner = CliRunner()
         with patch("thresher.cli.run_scan", side_effect=KeyboardInterrupt):
-            result = runner.invoke(main, ["https://github.com/x/y", "--no-tmux"])
+            result = runner.invoke(main, ["https://github.com/x/y"])
         assert result.exit_code == 130
 
     def test_scan_exception(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         runner = CliRunner()
         with patch("thresher.cli.run_scan", side_effect=RuntimeError("boom")):
-            result = runner.invoke(main, ["https://github.com/x/y", "--no-tmux"])
+            result = runner.invoke(main, ["https://github.com/x/y"])
         assert result.exit_code == 1
         assert "boom" in result.output
 
@@ -77,7 +76,7 @@ class TestBuildCommand:
     def test_build_invokes_build_base(self):
         runner = CliRunner()
         with patch("thresher.vm.lima.build_base") as mock_build:
-            result = runner.invoke(build, ["--no-tmux"])
+            result = runner.invoke(build, [])
         assert result.exit_code == 0
         assert mock_build.called
         assert "built successfully" in result.output.lower()
@@ -85,7 +84,7 @@ class TestBuildCommand:
     def test_build_with_vm_options(self):
         runner = CliRunner()
         with patch("thresher.vm.lima.build_base") as mock_build:
-            result = runner.invoke(build, ["--cpus", "8", "--memory", "16", "--disk", "100", "--no-tmux"])
+            result = runner.invoke(build, ["--cpus", "8", "--memory", "16", "--disk", "100"])
         assert result.exit_code == 0
         config = mock_build.call_args[0][0]
         assert config.vm.cpus == 8
@@ -95,6 +94,6 @@ class TestBuildCommand:
     def test_build_error(self):
         runner = CliRunner()
         with patch("thresher.vm.lima.build_base", side_effect=RuntimeError("fail")):
-            result = runner.invoke(build, ["--no-tmux"])
+            result = runner.invoke(build, [])
         assert result.exit_code == 1
         assert "fail" in result.output

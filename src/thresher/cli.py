@@ -13,6 +13,16 @@ from pathlib import Path
 
 import click
 
+from thresher.branding import (
+    ANALYST_DISPLAY_NAMES,
+    print_report_path,
+    print_scan_header,
+    print_splash,
+    print_stage_fail,
+    print_stage_ok,
+    print_swim_divider,
+    print_analyst_status,
+)
 from thresher.config import ScanConfig, load_config
 
 _DEFAULT_LOG_DIR = Path(tempfile.gettempdir()) / "thresher" / "logs"
@@ -23,16 +33,8 @@ _TMUX_SESSION = "thresher"
 _TMUX_ENV_FLAG = "_THRESHER_IN_TMUX"
 
 
-def print_stage(stage: int, total: int, message: str) -> None:
-    click.secho(f"[{stage}/{total}] {message}", fg="cyan", bold=True)
-
-
 def print_error(message: str) -> None:
     click.secho(f"ERROR: {message}", fg="red", err=True)
-
-
-def print_success(message: str) -> None:
-    click.secho(message, fg="green", bold=True)
 
 
 @click.command()
@@ -44,7 +46,7 @@ def print_success(message: str) -> None:
 @click.option("--cpus", type=int, default=None, help="VM CPU count (default: 4)")
 @click.option("--memory", type=int, default=None, help="VM memory in GB (default: 8)")
 @click.option("--disk", type=int, default=None, help="VM disk in GB (default: 50)")
-@click.option("--no-tmux", is_flag=True, help="Disable tmux split-pane UI")
+@click.option("--tmux", is_flag=True, help="Enable tmux split-pane UI")
 @click.option("--high-risk-dep", is_flag=True, help="Download high-risk hidden dependencies (binaries, tarballs)")
 def main(
     repo_url: str,
@@ -55,7 +57,7 @@ def main(
     cpus: int | None,
     memory: int | None,
     disk: int | None,
-    no_tmux: bool,
+    tmux: bool,
     high_risk_dep: bool,
 ) -> None:
     """Scan an open source repository for security threats and supply chain risks."""
@@ -82,8 +84,8 @@ def main(
             print_error(err)
         sys.exit(1)
 
-    # Launch under tmux if enabled and not already inside our session
-    use_tmux = config.tmux and not no_tmux
+    # Launch under tmux if enabled (CLI flag or config) and not already inside
+    use_tmux = tmux or config.tmux
     if use_tmux and not os.environ.get(_TMUX_ENV_FLAG):
         _exec_in_tmux(sys.argv)
         return  # unreachable if exec succeeds
@@ -226,26 +228,28 @@ def run_scan(config: ScanConfig) -> None:
     # _SCAN_TIMESTAMP already includes the repo name (e.g. "aegra-20260330-220612")
     scan_id = _SCAN_TIMESTAMP
 
+    # ── Splash ────────────────────────────────────────────────
+    print_splash("v0.1.0", "thresher.sh")
+    print_scan_header(config.repo_url)
+
     using_base = base_exists()
-    total_stages = 6 if not config.skip_ai else 4
 
     vm_name = None
     try:
         if using_base:
             # Reuse the pre-provisioned base VM
-            print_stage(1, total_stages, "Starting cached base VM...")
             vm_name = ensure_base_running()
-            print_stage(2, total_stages, "Cleaning working directories...")
+            print_stage_ok("Starting cached base VM")
             clean_working_dirs(vm_name)
+            print_stage_ok("Cleaning working directories")
         else:
             # Ephemeral flow: create from scratch
-            print_stage(1, total_stages, "Creating isolated VM...")
             vm_name = create_vm(config)
-            print_stage(2, total_stages, "Provisioning VM (installing scanners)...")
+            print_stage_ok("Creating isolated VM")
             provision_vm(vm_name, config)
+            print_stage_ok("Provisioning VM (installing scanners)")
 
-        # Stage 3: Clone repo
-        print_stage(3, total_stages, "Cloning repository (hardened)...")
+        # Clone repo
         from thresher.vm.ssh import ssh_exec
         from thresher.docker.sandbox import download_dependencies
 
@@ -256,35 +260,48 @@ def run_scan(config: ScanConfig) -> None:
             timeout=300,
         )
         if rc != 0:
+            print_stage_fail("Cloning repository (hardened)")
             raise RuntimeError(f"git clone failed (exit {rc}): {stderr}")
+        print_stage_ok("Cloning repository (hardened)")
 
-        # Stage 3b: Pre-dep discovery (AI agent finds hidden dependency sources)
+        # Pre-dep discovery (AI agent finds hidden dependency sources)
         if not config.skip_ai:
             from thresher.agents.predep import run_predep_discovery
-            print_stage(3, total_stages, "Discovering hidden dependency sources...")
             run_predep_discovery(vm_name, config)
+            print_stage_ok("Discovering hidden dependencies")
 
-        # Stage 3c: Resolve all dependencies (standard + hidden)
-        print_stage(3, total_stages, "Downloading dependencies...")
+        # Resolve all dependencies (standard + hidden)
         download_dependencies(vm_name, config)
+        print_stage_ok("Resolving dependencies")
 
-        # Stage 4: Run deterministic scanners (results stay in VM at /opt/scan-results/)
-        print_stage(4, total_stages, "Running deterministic scanners...")
+        # Run deterministic scanners (results stay in VM at /opt/scan-results/)
         from thresher.scanners.runner import run_all_scanners
 
         scanner_status = run_all_scanners(vm_name, config)
+        print_stage_ok("Vulnerability scanners (22 tools)")
 
         if not config.skip_ai:
-            # Stage 5: AI analysis (findings stay in VM)
-            print_stage(5, total_stages, "Running AI analysis agents...")
-            from thresher.agents.analysts import run_all_analysts
+            # AI analysis (findings stay in VM)
+            from thresher.agents.analysts import run_all_analysts, ANALYST_DEFINITIONS
             from thresher.agents.adversarial import run_adversarial_verification
 
-            run_all_analysts(vm_name, config)
-            run_adversarial_verification(vm_name, config)
+            print_stage_ok("AI analyst panel")
+            print()
 
-        # Final stage: Generate report (reads all data from within VM)
-        print_stage(total_stages, total_stages, "Generating report...")
+            run_all_analysts(vm_name, config)
+
+            # Print analyst completion summary
+            for analyst_def in ANALYST_DEFINITIONS:
+                num = analyst_def["number"]
+                name = analyst_def["name"]
+                display = ANALYST_DISPLAY_NAMES.get(name, name)
+                print_analyst_status(num, display, "done")
+
+            print()
+            run_adversarial_verification(vm_name, config)
+            print_stage_ok("Adversarial verification")
+
+        # Generate report (reads all data from within VM)
         from thresher.report.synthesize import generate_report
 
         report_path = generate_report(vm_name, config)
@@ -297,7 +314,13 @@ def run_scan(config: ScanConfig) -> None:
         ssh_copy_from_safe(vm_name, report_path, str(output))
         validate_report_structure(output)
 
-        print_success(f"\nScan complete. Report saved to: {output}")
+        print_stage_ok("Report synthesis")
+
+        # ── Results ───────────────────────────────────────────
+        print()
+        print_swim_divider()
+        print_report_path(str(output))
+        print_swim_divider()
 
     finally:
         if vm_name:
@@ -316,13 +339,13 @@ def run_scan(config: ScanConfig) -> None:
 @click.option("--memory", type=int, default=None, help="VM memory in GB (default: 8)")
 @click.option("--disk", type=int, default=None, help="VM disk in GB (default: 50)")
 @click.option("--verbose", is_flag=True, help="Show detailed output")
-@click.option("--no-tmux", is_flag=True, help="Disable tmux split-pane UI")
+@click.option("--tmux", is_flag=True, help="Enable tmux split-pane UI")
 def build(
     cpus: int | None,
     memory: int | None,
     disk: int | None,
     verbose: bool,
-    no_tmux: bool,
+    tmux: bool,
 ) -> None:
     """Build (or rebuild) the cached base VM image.
 
@@ -341,8 +364,8 @@ def build(
 
     _setup_logging(verbose, config.log_dir)
 
-    # Launch under tmux if enabled
-    use_tmux = config.tmux and not no_tmux
+    # Launch under tmux if enabled (CLI flag or config)
+    use_tmux = tmux or config.tmux
     if use_tmux and not os.environ.get(_TMUX_ENV_FLAG):
         _exec_in_tmux(sys.argv)
         return
@@ -350,9 +373,10 @@ def build(
     from thresher.vm.lima import build_base
 
     try:
-        click.secho("Building base VM image (this may take 5-10 minutes)...", fg="cyan", bold=True)
+        print_splash("v0.1.0", "thresher.sh")
+        print_stage_ok("Building base VM image (this may take 5-10 minutes)...")
         build_base(config)
-        print_success("Base VM image built successfully. Future scans will start in seconds.")
+        print_stage_ok("Base VM image built successfully. Future scans will start in seconds.")
     except KeyboardInterrupt:
         click.echo("\nBuild interrupted.")
         sys.exit(130)

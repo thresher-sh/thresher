@@ -1,0 +1,6 @@
+#!/bin/bash
+echo "Thresher installer — coming soon"
+echo "For now, install from source:"
+echo "  git clone https://github.com/shadowcodex/thresher.git"
+echo "  cd thresher"
+echo "  pip install -e ."

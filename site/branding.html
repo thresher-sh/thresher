@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thresher — Brand System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --deep-black: #0a0a0a;
+    --terminal-black: #1a1a1a;
+    --charcoal: #2a2a2a;
+    --steel: #6b7280;
+    --bone: #e5e5e5;
+    --arctic: #f0f9ff;
+    --violet: #a78bfa;
+    --violet-dim: rgba(167, 139, 250, 0.15);
+    --threat-red: #ef4444;
+    --safe-green: #22c55e;
+    --amber: #f59e0b;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--deep-black);
+    color: var(--bone);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.7;
+    padding: 60px 24px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 28px;
+    color: var(--arctic);
+    margin-bottom: 8px;
+  }
+
+  h2 {
+    font-size: 18px;
+    color: var(--violet);
+    margin: 60px 0 24px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-size: 12px;
+  }
+
+  .subtitle {
+    color: var(--steel);
+    margin-bottom: 48px;
+  }
+
+  /* Color palette */
+  .palette {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .swatch {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--charcoal);
+  }
+
+  .swatch-color {
+    height: 80px;
+  }
+
+  .swatch-info {
+    padding: 12px;
+    background: var(--terminal-black);
+    font-size: 12px;
+  }
+
+  .swatch-name {
+    color: var(--arctic);
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .swatch-hex {
+    color: var(--steel);
+  }
+
+  /* ASCII art display */
+  .ascii-block {
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 16px;
+    white-space: pre;
+    font-size: 14px;
+    line-height: 1.25;
+    color: var(--violet);
+    overflow-x: auto;
+  }
+
+  .ascii-label {
+    color: var(--steel);
+    font-size: 11px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* Stage indicators */
+  .stages {
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+
+  .stage-line {
+    margin-bottom: 4px;
+    font-size: 14px;
+  }
+
+  .ok { color: var(--safe-green); }
+  .running { color: var(--steel); }
+  .fail { color: var(--threat-red); }
+  .label { color: var(--bone); }
+
+  /* ANSI reference */
+  .ansi-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 24px;
+  }
+
+  .ansi-table th,
+  .ansi-table td {
+    text-align: left;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--charcoal);
+    font-size: 13px;
+  }
+
+  .ansi-table th {
+    color: var(--steel);
+    font-weight: 400;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .ansi-table td:first-child {
+    color: var(--arctic);
+    font-weight: 700;
+  }
+
+  .ansi-table td:nth-child(2) {
+    color: var(--steel);
+    font-family: var(--mono);
+  }
+
+  .color-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+
+  /* Swim divider demo */
+  .swim-demo {
+    color: var(--violet);
+    font-size: 14px;
+    margin: 16px 0;
+    text-align: center;
+  }
+
+  /* Findings table demo */
+  .findings-demo {
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 8px;
+    padding: 24px;
+    font-size: 14px;
+  }
+
+  .findings-title {
+    color: var(--arctic);
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .findings-header span {
+    display: inline-block;
+    min-width: 50px;
+    font-weight: 700;
+  }
+
+  .findings-row span {
+    display: inline-block;
+    min-width: 50px;
+  }
+</style>
+</head>
+<body>
+
+<h1>thresher</h1>
+<p class="subtitle">Brand System Reference</p>
+
+<!-- ── Color Palette ──────────────────────────── -->
+<h2>// Color Palette</h2>
+
+<div class="palette">
+  <div class="swatch">
+    <div class="swatch-color" style="background: #0a0a0a;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Deep Black</div>
+      <div class="swatch-hex">#0a0a0a</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #1a1a1a;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Terminal Black</div>
+      <div class="swatch-hex">#1a1a1a</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #2a2a2a;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Charcoal</div>
+      <div class="swatch-hex">#2a2a2a</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #6b7280;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Steel</div>
+      <div class="swatch-hex">#6b7280</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #e5e5e5;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Bone</div>
+      <div class="swatch-hex">#e5e5e5</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #f0f9ff;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Arctic White</div>
+      <div class="swatch-hex">#f0f9ff</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #a78bfa;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Vapor Violet</div>
+      <div class="swatch-hex">#a78bfa</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #ef4444;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Threat Red</div>
+      <div class="swatch-hex">#ef4444</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #22c55e;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Safe Green</div>
+      <div class="swatch-hex">#22c55e</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #f59e0b;"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Amber</div>
+      <div class="swatch-hex">#f59e0b</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── ANSI Terminal Colors ───────────────────── -->
+<h2>// ANSI Terminal Colors</h2>
+
+<table class="ansi-table">
+  <tr><th>Name</th><th>ANSI Code</th><th>Preview</th></tr>
+  <tr><td>VIOLET</td><td>\033[38;5;141m</td><td><span class="color-dot" style="background:#a78bfa;"></span>Vapor Violet</td></tr>
+  <tr><td>ARCTIC</td><td>\033[38;5;195m</td><td><span class="color-dot" style="background:#f0f9ff;"></span>Arctic White</td></tr>
+  <tr><td>WHITE</td><td>\033[38;5;255m</td><td><span class="color-dot" style="background:#fafafa;"></span>White</td></tr>
+  <tr><td>GRAY</td><td>\033[38;5;245m</td><td><span class="color-dot" style="background:#8a8a8a;"></span>Steel Gray</td></tr>
+  <tr><td>GREEN</td><td>\033[38;5;114m</td><td><span class="color-dot" style="background:#87d787;"></span>Safe Green</td></tr>
+  <tr><td>RED</td><td>\033[38;5;203m</td><td><span class="color-dot" style="background:#ff5f5f;"></span>Threat Red</td></tr>
+  <tr><td>AMBER</td><td>\033[38;5;214m</td><td><span class="color-dot" style="background:#ffaf00;"></span>Amber</td></tr>
+</table>
+
+<!-- ── ASCII Art ──────────────────────────────── -->
+<h2>// ASCII Art</h2>
+
+<div class="ascii-label">Full Splash (used at scan start)</div>
+<div class="ascii-block">                                          ___/|
+                              ___________/    |
+                   __________/                |
+               ___/    _____                  |
+           ___/   \___/     \                 |
+       ___/                  \         ______/
+   ___/         _              \______/
+  /          __/ \__    ___----~
+ |      ,__-~      \--~
+ |     /    _,                  <span style="color:var(--arctic);font-weight:700;">T H R E S H E R</span>
+  \___/  __/
+     |  /                       <span style="color:var(--steel);">v0.1.0 | thresher.sh</span>
+     |_/
+      ~</div>
+
+<div class="ascii-label">Compact Shark (used inline)</div>
+<div class="ascii-block">    _/|\___
+   /  () \___
+  /          \____
+ | THRESHER      /
+  \      _______/
+   \____/</div>
+
+<!-- ── Stage Indicators ──────────────────────── -->
+<h2>// Stage Indicators</h2>
+
+<div class="stages">
+  <div class="stage-line"><span class="ok">[OK]</span> <span class="label">Cloning repository (hardened)</span></div>
+  <div class="stage-line"><span class="ok">[OK]</span> <span class="label">Discovering hidden dependencies</span></div>
+  <div class="stage-line"><span class="ok">[OK]</span> <span class="label">Resolving dependencies (3 ecosystems)</span></div>
+  <div class="stage-line"><span class="running">[..]</span> <span class="label">Vulnerability scanners (22 tools)</span></div>
+  <div class="stage-line"><span class="fail">[!!]</span> <span class="label">AI analyst panel (error example)</span></div>
+</div>
+
+<!-- ── Analyst Status ────────────────────────── -->
+<h2>// Analyst Status Lines</h2>
+
+<div class="stages">
+  <div class="stage-line" style="color:var(--steel);">  Analyst 1: The Paranoid ............. <span class="ok">done</span></div>
+  <div class="stage-line" style="color:var(--steel);">  Analyst 2: The Behaviorist .......... <span class="ok">done</span></div>
+  <div class="stage-line" style="color:var(--steel);">  Analyst 3: The Investigator ......... <span class="ok">done</span></div>
+  <div class="stage-line" style="color:var(--steel);">  Analyst 4: Vuln Pentester ........... <span class="ok">done</span></div>
+  <div class="stage-line" style="color:var(--steel);">  Analyst 5: App Pentester ............ <span class="ok">done</span></div>
+  <div class="stage-line" style="color:var(--steel);">  Analyst 6: Memory Exploiter ......... <span class="ok">done</span></div>
+  <div class="stage-line" style="color:var(--steel);">  Analyst 7: Infra Auditor ............ <span class="ok">done</span></div>
+  <div class="stage-line" style="color:var(--steel);">  Analyst 8: The Shadowcatcher ........ <span class="ok">done</span></div>
+</div>
+
+<!-- ── Swim Divider ──────────────────────────── -->
+<h2>// Swim Divider</h2>
+
+<div class="swim-demo" style="font-family:var(--mono);">~~~~~~~~~~~_/|~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</div>
+
+<!-- ── Findings Summary ──────────────────────── -->
+<h2>// Findings Summary</h2>
+
+<div class="findings-demo">
+  <div class="findings-title">FINDINGS</div>
+  <div class="findings-header">
+    <span style="color:var(--threat-red);font-weight:700;">P0</span>
+    <span style="color:var(--threat-red);font-weight:700;">CRIT</span>
+    <span style="color:var(--amber);font-weight:700;">HIGH</span>
+    <span style="color:var(--amber);font-weight:700;">MED</span>
+    <span style="color:var(--steel);">LOW</span>
+  </div>
+  <div class="findings-row">
+    <span> 0</span>
+    <span>   2</span>
+    <span>    5</span>
+    <span>  12</span>
+    <span>  23</span>
+  </div>
+</div>
+
+<!-- ── Typography ────────────────────────────── -->
+<h2>// Typography</h2>
+
+<div class="stages">
+  <div style="margin-bottom:16px;">
+    <div style="color:var(--steel);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Primary Font</div>
+    <div style="color:var(--arctic);font-size:18px;font-weight:700;">JetBrains Mono</div>
+    <div style="color:var(--steel);font-size:13px;">Used everywhere. Terminal-native. Monospaced.</div>
+  </div>
+  <div>
+    <div style="color:var(--steel);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Wordmark</div>
+    <div style="color:var(--arctic);font-size:28px;font-weight:700;letter-spacing:-1px;">thresher</div>
+    <div style="color:var(--steel);font-size:13px;">Lowercase. JetBrains Mono Bold. Arctic White.</div>
+  </div>
+</div>
+
+</body>
+</html>
