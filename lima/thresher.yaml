@@ -14,6 +14,15 @@ disk: "30GiB"
 
 plain: true
 
+# Fixed VM user — ensures exported images are portable across different
+# host machines. Without this, Lima maps the host macOS username into the
+# VM, making exported images fail on import when usernames differ.
+user:
+  name: "scanner"
+  uid: 1001
+  home: "/home/scanner"
+  shell: "/bin/bash"
+
 # NOTE: hostResolver.hosts is NOT used here. There is a known Lima bug
 # with vmType: "vz" where configuring TLD entries in hostResolver.hosts
 # breaks DNS resolution for ALL other domains under those TLDs during
