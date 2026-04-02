@@ -42,7 +42,13 @@ def print_error(message: str) -> None:
 # CLI group
 # ---------------------------------------------------------------------------
 
+def _get_version() -> str:
+    from importlib.metadata import version as pkg_version
+    return pkg_version("thresher")
+
+
 @click.group(invoke_without_command=True)
+@click.version_option(package_name="thresher", prog_name="thresher")
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """Thresher — supply chain security scanner."""

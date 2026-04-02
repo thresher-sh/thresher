@@ -1,4 +1,4 @@
-[Join Discord Discord](https://discord.gg/VVt9qmkcnr) -- [Website: thresher.sh](https://thresher.sh)
+[Join Discord](https://discord.gg/VVt9qmkcnr) -- [Website: thresher.sh](https://thresher.sh)
 
 ```
                                           ___/|
