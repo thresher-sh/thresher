@@ -35,3 +35,8 @@ AI Benchmark
 etc...
 
 So we can calculate costs etc and impact and average cost to run them, then build configurations for max turns etc into the thresher.toml file so folks can tune to what they want to pay...
+
+
+----
+
+Shallow git clone breaks forensic abilities
