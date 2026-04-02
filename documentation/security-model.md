@@ -139,4 +139,4 @@ The agents analyze code by reading and searching — they never execute it.
 - The egress firewall resolves domains to IPs at setup time. If a whitelisted domain's IP changes during a scan, new IPs won't be allowed.
 - The `vz` backend relies on Apple's Virtualization.framework. VM escape vulnerabilities in the hypervisor would bypass all isolation.
 - Source-only downloads prevent install-time attacks, but import-time attacks (code that runs when the module is loaded) are still possible if the code were ever imported. The scanners analyze code statically — they don't import it.
-- The base VM is reused across scans. If it were compromised (e.g., via a tool update), subsequent scans would inherit the compromise. Rebuild with `thresher-stop && thresher-build` if concerned.
+- The base VM is reused across scans. If it were compromised (e.g., via a tool update), subsequent scans would inherit the compromise. Rebuild with `thresher stop && thresher build` if concerned.

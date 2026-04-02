@@ -14,37 +14,15 @@ disk: "15GiB"
 
 plain: true
 
-hostResolver:
-  enabled: true
-  hosts:
-    # AI API
-    api.anthropic.com: api.anthropic.com
-    # Source code hosting
-    github.com: github.com
-    api.github.com: api.github.com
-    # Package registries
-    pypi.org: pypi.org
-    files.pythonhosted.org: files.pythonhosted.org
-    registry.npmjs.org: registry.npmjs.org
-    crates.io: crates.io
-    static.crates.io: static.crates.io
-    proxy.golang.org: proxy.golang.org
-    # Vulnerability databases
-    api.first.org: api.first.org
-    services.nvd.nist.gov: services.nvd.nist.gov
-    toolbox-data.anchore.io: toolbox-data.anchore.io
-    grype.anchore.io: grype.anchore.io
-    api.osv.dev: api.osv.dev
-    vuln.go.dev: vuln.go.dev
-    # Scanner tool registries
-    semgrep.dev: semgrep.dev
-    metrics.semgrep.dev: metrics.semgrep.dev
-    ghcr.io: ghcr.io
-    pkg-containers.githubusercontent.com: pkg-containers.githubusercontent.com
-    # Package metadata intelligence
-    api.deps.dev: api.deps.dev
-    # Malware definitions
-    database.clamav.net: database.clamav.net
+# NOTE: hostResolver.hosts is NOT used here. There is a known Lima bug
+# with vmType: "vz" where configuring TLD entries in hostResolver.hosts
+# breaks DNS resolution for ALL other domains under those TLDs during
+# boot, causing cloud-init to hang indefinitely.
+# See: https://github.com/lima-vm/lima/issues/2939
+#
+# DNS egress control is enforced by iptables in vm_scripts/firewall.sh
+# (Layer 3 of the network hardening spec). The firewall pins DNS to
+# the host gateway and whitelists only approved destination IPs.
 
 mounts: []
 

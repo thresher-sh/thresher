@@ -68,6 +68,25 @@ if id -nG "${SCAN_USER}" | grep -qw docker; then
 fi
 
 # ---------------------------------------------------------------------------
+# Lock down runtime scripts — root-owned, read+execute only
+# These were copied with 777 so rsync (as SSH user) could write them.
+# Now tighten so the scan user can execute but not modify.
+# ---------------------------------------------------------------------------
+if [ -d /opt/thresher/bin ]; then
+    log "Locking down /opt/thresher/bin..."
+    chown -R root:root /opt/thresher/bin
+    chmod 755 /opt/thresher/bin
+    chmod 755 /opt/thresher/bin/*.sh 2>/dev/null || true
+fi
+
+if [ -d /opt/rules ]; then
+    log "Locking down /opt/rules..."
+    chown -R root:root /opt/rules
+    find /opt/rules -type d -exec chmod 755 {} \;
+    find /opt/rules -type f -exec chmod 644 {} \;
+fi
+
+# ---------------------------------------------------------------------------
 # Verify lockdown
 # ---------------------------------------------------------------------------
 log "Verifying lockdown..."

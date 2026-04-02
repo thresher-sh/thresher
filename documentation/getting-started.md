@@ -25,7 +25,7 @@ pip install -e .
 ```bash
 git clone https://github.com/<owner>/project-thresherner.git
 cd project-thresherner
-uv run thresher --help
+uv run thresher scan --help
 ```
 
 ## Configuration
@@ -70,19 +70,19 @@ CLI flags override config file values. Environment variables override both for c
 ### Quick scan (no AI, no API key needed)
 
 ```bash
-thresher https://github.com/owner/repo --skip-ai
+thresher scan https://github.com/owner/repo --skip-ai
 ```
 
 ### Full scan with AI analysis
 
 ```bash
-thresher https://github.com/owner/repo
+thresher scan https://github.com/owner/repo
 ```
 
 ### Pre-build the base VM (speeds up future scans)
 
 ```bash
-thresher-build
+thresher build
 ```
 
 This provisions the base VM with all scanner tools and databases. Subsequent scans reuse this base image instead of provisioning from scratch.
@@ -100,10 +100,10 @@ This provisions the base VM with all scanner tools and databases. Subsequent sca
 
 ## CLI Reference
 
-### `thresher` — Run a scan
+### `thresher scan` — Run a scan
 
 ```bash
-thresher <repo-url> [OPTIONS]
+thresher scan <repo-url> [OPTIONS]
 ```
 
 | Flag | Default | Description |
@@ -117,18 +117,18 @@ thresher <repo-url> [OPTIONS]
 | `--disk N` | 50 | VM disk in GiB |
 | `--tmux` | off | Enable tmux split-pane UI |
 
-### `thresher-build` — Pre-build base VM
+### `thresher build` — Pre-build base VM
 
 ```bash
-thresher-build [--cpus N] [--memory N] [--disk N]
+thresher build [--cpus N] [--memory N] [--disk N]
 ```
 
 Provisions a reusable base VM with all tools pre-installed.
 
-### `thresher-stop` — Stop all VMs
+### `thresher stop` — Stop all VMs
 
 ```bash
-thresher-stop
+thresher stop
 ```
 
 Force-stops and deletes all scanner VMs. Use this if a scan crashed and left VMs running.
@@ -172,7 +172,7 @@ The base VM requires about **15 GiB** of disk space for tools and databases. Wit
 limactl list
 
 # Force-stop all scanner VMs
-thresher-stop
+thresher stop
 
 # Delete stale VMs manually
 limactl delete --force thresher-base
@@ -189,8 +189,8 @@ limactl shell thresher-base -- echo "alive"
 If not, force-stop and retry:
 
 ```bash
-thresher-stop
-thresher <repo-url>
+thresher stop
+thresher scan <repo-url>
 ```
 
 ### Out of disk space in VM
@@ -199,8 +199,8 @@ Increase the disk size:
 
 ```bash
 # Rebuild base with more disk
-thresher-stop
-thresher-build --disk 100
+thresher stop
+thresher build --disk 100
 ```
 
 ### API key issues

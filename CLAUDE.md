@@ -120,15 +120,18 @@ These are read via `config.active_limits` (module-level singleton).
 When adding new limits, add to `LimitsConfig` in config.py and load
 from the `[limits]` table.
 
-## CLI Entry Points
+## CLI Commands
 
 ```
-thresher <repo_url>       # Run a scan
-thresher-build            # Build/rebuild the base VM image
-thresher-stop             # Stop all VMs and tmux session
+thresher scan <repo_url>  # Scan a repository
+thresher build            # Build/rebuild the base VM image
+thresher stop             # Stop all VMs and tmux session
+thresher                  # Show help with available commands
 ```
 
-Key flags: `--skip-ai`, `--high-risk-dep`, `--tmux`, `--verbose`
+Key flags (on `scan`): `--skip-ai`, `--high-risk-dep`, `--tmux`, `--verbose`
+
+Legacy entry points `thresher-build` and `thresher-stop` still work.
 
 ## Testing
 

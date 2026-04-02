@@ -7,7 +7,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,16 @@ def ssh_exec(
     command: str,
     timeout: int = 300,
     env: dict[str, str] | None = None,
+    on_stdout: "Callable[[str], None] | None" = None,
 ) -> SSHResult:
     """Run a command inside the Lima VM via limactl shell.
 
     Streams stdout and stderr to the logger in real time so they appear
     in the log pane, while still capturing full output for the caller.
+
+    Args:
+        on_stdout: Optional callback invoked with each stdout line.
+                   Used for progress tracking during long operations.
     """
     # Build the full command with exported env vars so they propagate
     # through &&-chained commands and subshells.
@@ -112,6 +117,8 @@ def ssh_exec(
                             )
                         stdout_lines.append(line)
                         logger.info("  %s", stripped)
+                        if on_stdout:
+                            on_stdout(stripped)
                     else:
                         stderr_lines.append(line)
                         logger.warning("  %s", stripped)

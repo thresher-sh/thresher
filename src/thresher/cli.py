@@ -15,6 +15,7 @@ import click
 
 from thresher.branding import (
     ANALYST_DISPLAY_NAMES,
+    FinSpinner,
     print_report_path,
     print_scan_header,
     print_splash,
@@ -37,7 +38,23 @@ def print_error(message: str) -> None:
     click.secho(f"ERROR: {message}", fg="red", err=True)
 
 
-@click.command()
+# ---------------------------------------------------------------------------
+# CLI group
+# ---------------------------------------------------------------------------
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx: click.Context) -> None:
+    """Thresher — supply chain security scanner."""
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+
+
+# ---------------------------------------------------------------------------
+# thresher scan <url>
+# ---------------------------------------------------------------------------
+
+@cli.command()
 @click.argument("repo_url")
 @click.option("--depth", type=int, default=None, help="Transitive dependency depth (default: 2)")
 @click.option("--skip-ai", is_flag=True, help="Deterministic scanners only (no AI agents)")
@@ -48,7 +65,7 @@ def print_error(message: str) -> None:
 @click.option("--disk", type=int, default=None, help="VM disk in GB (default: 50)")
 @click.option("--tmux", is_flag=True, help="Enable tmux split-pane UI")
 @click.option("--high-risk-dep", is_flag=True, help="Download high-risk hidden dependencies (binaries, tarballs)")
-def main(
+def scan(
     repo_url: str,
     depth: int | None,
     skip_ai: bool,
@@ -60,7 +77,7 @@ def main(
     tmux: bool,
     high_risk_dep: bool,
 ) -> None:
-    """Scan an open source repository for security threats and supply chain risks."""
+    """Scan a repository for security threats and supply chain risks."""
     config = load_config(
         repo_url=repo_url,
         depth=depth,
@@ -97,7 +114,7 @@ def main(
             click.secho("Auth: using OAuth token from macOS Keychain", fg="blue")
 
     try:
-        run_scan(config)
+        _run_scan(config)
     except KeyboardInterrupt:
         click.echo("\nScan interrupted.")
         sys.exit(130)
@@ -106,235 +123,11 @@ def main(
         sys.exit(1)
 
 
-def _exec_in_tmux(argv: list[str]) -> None:
-    """Re-exec the current command inside a tmux split-pane layout.
+# ---------------------------------------------------------------------------
+# thresher build
+# ---------------------------------------------------------------------------
 
-    Left pane:  the scan (re-invoked with _THRESHER_IN_TMUX set)
-    Right pane: tail -f on the log file
-
-    Navigation:
-        Ctrl-b h/l   Switch panes
-        Ctrl-b z     Zoom pane (toggle)
-        Ctrl-b [     Scroll mode (q to exit)
-        Ctrl-b q     Quit session
-    """
-    if not shutil.which("tmux"):
-        click.secho("tmux not found — running without split-pane UI.", fg="yellow")
-        click.secho("Install with: brew install tmux", fg="yellow")
-        os.environ[_TMUX_ENV_FLAG] = "1"
-        # Fall through — just run normally
-        return
-
-    # Ensure log dir and file exist for tmux tail -f.
-    # _setup_logging may have already run; if not, create a placeholder.
-    log_dir = LOG_DIR
-    log_file = log_dir / "scan.log"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    if log_file.is_symlink():
-        # Symlink exists from _setup_logging — ensure target exists
-        target = log_file.resolve()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.exists():
-            target.write_text("")
-    elif not log_file.exists():
-        log_file.write_text("")
-
-    # Kill any previous session
-    subprocess.run(
-        ["tmux", "kill-session", "-t", _TMUX_SESSION],
-        capture_output=True,
-    )
-
-    # Build the scan command that runs inside the left pane
-    inner_cmd = " ".join(shlex.quote(a) for a in argv)
-    scan_cmd = (
-        f"export {_TMUX_ENV_FLAG}=1; "
-        f"{inner_cmd}; "
-        f"echo ''; echo 'Scan finished. Press Ctrl-b + q to exit.'; read -r"
-    )
-
-    # Create session with scan in first pane
-    subprocess.run(
-        ["tmux", "new-session", "-d", "-s", _TMUX_SESSION, "bash", "-c", scan_cmd],
-        check=True,
-    )
-
-    # Split right pane for logs (40% width)
-    subprocess.run(
-        ["tmux", "split-window", "-h", "-t", _TMUX_SESSION, "-p", "40",
-         "tail", "-F", str(LOG_FILE)],
-        check=True,
-    )
-
-    # Pane titles
-    for pane, title in [("0.0", "Scan"), ("0.1", "Logs")]:
-        subprocess.run(
-            ["tmux", "select-pane", "-t", f"{_TMUX_SESSION}:{pane}", "-T", title],
-            check=True,
-        )
-
-    # Show pane borders with titles
-    subprocess.run(
-        ["tmux", "set-option", "-t", _TMUX_SESSION, "pane-border-status", "top"],
-        check=True,
-    )
-    subprocess.run(
-        ["tmux", "set-option", "-t", _TMUX_SESSION, "pane-border-format",
-         " #{pane_title} "],
-        check=True,
-    )
-
-    # Enable mouse — scroll, click to switch panes, resize
-    subprocess.run(
-        ["tmux", "set-option", "-t", _TMUX_SESSION, "mouse", "on"],
-        check=True,
-    )
-
-    # Keybindings: h/l to switch panes, q to kill session
-    subprocess.run(["tmux", "bind-key", "-T", "prefix", "h", "select-pane", "-L"])
-    subprocess.run(["tmux", "bind-key", "-T", "prefix", "l", "select-pane", "-R"])
-    subprocess.run(
-        ["tmux", "bind-key", "-T", "prefix", "q",
-         "kill-session", "-t", _TMUX_SESSION],
-    )
-
-    # Focus scan pane and attach
-    subprocess.run(
-        ["tmux", "select-pane", "-t", f"{_TMUX_SESSION}:0.0"],
-        check=True,
-    )
-
-    # Attach to tmux session — blocks until session ends
-    subprocess.run(["tmux", "attach-session", "-t", _TMUX_SESSION])
-
-    # Session exited (Ctrl-b q, or scan finished and user closed it)
-    # Clean up any leftover scanner VMs
-    stop_all()
-
-
-def run_scan(config: ScanConfig) -> None:
-    """Execute the full scan pipeline."""
-    from thresher.vm.lima import (
-        BASE_VM_NAME,
-        base_exists,
-        clean_working_dirs,
-        create_vm,
-        destroy_vm,
-        ensure_base_running,
-        provision_vm,
-        stop_vm,
-    )
-
-    # _SCAN_TIMESTAMP already includes the repo name (e.g. "aegra-20260330-220612")
-    scan_id = _SCAN_TIMESTAMP
-
-    # ── Splash ────────────────────────────────────────────────
-    print_splash("v0.1.0", "thresher.sh")
-    print_scan_header(config.repo_url)
-
-    using_base = base_exists()
-
-    vm_name = None
-    try:
-        if using_base:
-            # Reuse the pre-provisioned base VM
-            vm_name = ensure_base_running()
-            print_stage_ok("Starting cached base VM")
-            clean_working_dirs(vm_name)
-            print_stage_ok("Cleaning working directories")
-        else:
-            # Ephemeral flow: create from scratch
-            vm_name = create_vm(config)
-            print_stage_ok("Creating isolated VM")
-            provision_vm(vm_name, config)
-            print_stage_ok("Provisioning VM (installing scanners)")
-
-        # Clone repo
-        from thresher.vm.ssh import ssh_exec
-        from thresher.docker.sandbox import download_dependencies
-
-        safe_url = shlex.quote(config.repo_url)
-        stdout, stderr, rc = ssh_exec(
-            vm_name,
-            f"bash /tmp/safe_clone.sh {safe_url} /opt/target",
-            timeout=300,
-        )
-        if rc != 0:
-            print_stage_fail("Cloning repository (hardened)")
-            raise RuntimeError(f"git clone failed (exit {rc}): {stderr}")
-        print_stage_ok("Cloning repository (hardened)")
-
-        # Pre-dep discovery (AI agent finds hidden dependency sources)
-        if not config.skip_ai:
-            from thresher.agents.predep import run_predep_discovery
-            run_predep_discovery(vm_name, config)
-            print_stage_ok("Discovering hidden dependencies")
-
-        # Resolve all dependencies (standard + hidden)
-        download_dependencies(vm_name, config)
-        print_stage_ok("Resolving dependencies")
-
-        # Run deterministic scanners (results stay in VM at /opt/scan-results/)
-        from thresher.scanners.runner import run_all_scanners
-
-        scanner_status = run_all_scanners(vm_name, config)
-        print_stage_ok("Vulnerability scanners (22 tools)")
-
-        if not config.skip_ai:
-            # AI analysis (findings stay in VM)
-            from thresher.agents.analysts import run_all_analysts, ANALYST_DEFINITIONS
-            from thresher.agents.adversarial import run_adversarial_verification
-
-            print_stage_ok("AI analyst panel")
-            print()
-
-            run_all_analysts(vm_name, config)
-
-            # Print analyst completion summary
-            for analyst_def in ANALYST_DEFINITIONS:
-                num = analyst_def["number"]
-                name = analyst_def["name"]
-                display = ANALYST_DISPLAY_NAMES.get(name, name)
-                print_analyst_status(num, display, "done")
-
-            print()
-            run_adversarial_verification(vm_name, config)
-            print_stage_ok("Adversarial verification")
-
-        # Generate report (reads all data from within VM)
-        from thresher.report.synthesize import generate_report
-
-        report_path = generate_report(vm_name, config)
-
-        # Retrieve report from VM (validated copy — treats VM as untrusted)
-        from thresher.vm.safe_io import ssh_copy_from_safe, validate_report_structure
-
-        output = Path(config.output_dir) / scan_id
-        output.mkdir(parents=True, exist_ok=True)
-        ssh_copy_from_safe(vm_name, report_path, str(output))
-        validate_report_structure(output)
-
-        print_stage_ok("Report synthesis")
-
-        # ── Results ───────────────────────────────────────────
-        print()
-        print_swim_divider()
-        print_report_path(str(output))
-        print_swim_divider()
-
-    finally:
-        if vm_name:
-            if using_base:
-                # Base VM: stop but keep for next scan
-                click.echo("Stopping base VM...")
-                stop_vm(vm_name)
-            else:
-                # Ephemeral VM: destroy completely
-                click.echo("Destroying VM...")
-                destroy_vm(vm_name)
-
-
-@click.command()
+@cli.command()
 @click.option("--cpus", type=int, default=None, help="VM CPU count (default: 4)")
 @click.option("--memory", type=int, default=None, help="VM memory in GB (default: 8)")
 @click.option("--disk", type=int, default=None, help="VM disk in GB (default: 50)")
@@ -347,12 +140,7 @@ def build(
     verbose: bool,
     tmux: bool,
 ) -> None:
-    """Build (or rebuild) the cached base VM image.
-
-    Provisions the VM with all scanners and tools, then stops it.
-    Subsequent ``thresher`` runs will reuse this image instead of
-    provisioning from scratch each time.
-    """
+    """Build (or rebuild) the cached base VM image."""
     config = load_config(
         repo_url="",  # not scanning, just building
         skip_ai=True,
@@ -370,13 +158,53 @@ def build(
         _exec_in_tmux(sys.argv)
         return
 
-    from thresher.vm.lima import build_base
+    from thresher.vm.lima import (
+        BASE_VM_NAME,
+        _PROJECT_ROOT,
+        _TEMPLATE_PATH,
+        _run_limactl,
+        base_exists,
+        destroy_vm,
+        provision_vm,
+        start_vm,
+        stop_vm,
+    )
 
     try:
-        print_splash("v0.1.0", "thresher.sh")
-        print_stage_ok("Building base VM image (this may take 5-10 minutes)...")
-        build_base(config)
-        print_stage_ok("Base VM image built successfully. Future scans will start in seconds.")
+        print_splash("v0.2.0", "thresher.sh")
+
+        if base_exists():
+            with FinSpinner("Removing existing base VM"):
+                destroy_vm(BASE_VM_NAME)
+
+        with FinSpinner("Creating base VM"):
+            # Inline the create logic so we can show granular progress
+            if not _TEMPLATE_PATH.exists():
+                raise RuntimeError("Lima template not found")
+            create_cmd = [
+                "limactl", "create",
+                "--name", BASE_VM_NAME,
+                f"--cpus={config.vm.cpus}",
+                f"--memory={config.vm.memory}",
+                f"--disk={config.vm.disk}",
+                "--plain",
+                str(_TEMPLATE_PATH),
+            ]
+            result = _run_limactl(create_cmd, timeout=300)
+            if result.returncode != 0:
+                raise RuntimeError(f"Failed to create VM: {result.stderr}")
+
+        with FinSpinner("Starting VM (first boot may take a minute)"):
+            start_vm(BASE_VM_NAME)
+
+        # Provisioning gets its own progress bar (inside provision_vm)
+        provision_vm(BASE_VM_NAME, config)
+
+        with FinSpinner("Stopping base VM"):
+            stop_vm(BASE_VM_NAME)
+
+        print_stage_ok("Base VM image built successfully")
+
     except KeyboardInterrupt:
         click.echo("\nBuild interrupted.")
         sys.exit(130)
@@ -385,72 +213,235 @@ def build(
         sys.exit(1)
 
 
-_SCAN_TIMESTAMP: str = ""
+# ---------------------------------------------------------------------------
+# thresher stop
+# ---------------------------------------------------------------------------
+
+@cli.command()
+def stop() -> None:
+    """Stop all thresher VMs and tmux session."""
+    _stop_all()
 
 
-def _setup_logging(verbose: bool, log_dir: str = "", scan_id: str = "") -> None:
-    """Configure logging to file (always) and stderr (if verbose).
+# ---------------------------------------------------------------------------
+# Legacy entry points (for backward compat with thresher-build, thresher-stop)
+# ---------------------------------------------------------------------------
 
-    Logs go into ``<log_dir>/<scan_id>/scan.log``. A ``scan.log`` symlink
-    at the log_dir root always points to the latest for tmux ``tail -f``.
-    """
-    global LOG_DIR, LOG_FILE, _SCAN_TIMESTAMP
-    import datetime
+def main() -> None:
+    """Main entry point — invokes the CLI group."""
+    cli()
 
-    if log_dir:
-        LOG_DIR = Path(log_dir)
 
-    _SCAN_TIMESTAMP = scan_id or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = LOG_DIR / _SCAN_TIMESTAMP
-    run_dir.mkdir(parents=True, exist_ok=True)
+def build_entry() -> None:
+    """Legacy entry point for thresher-build."""
+    cli(["build"] + sys.argv[1:], standalone_mode=True)
 
-    run_log = run_dir / "scan.log"
-    run_log.write_text("")
 
-    # Stable symlink at log root for tmux tail -F
-    LOG_FILE = LOG_DIR / "scan.log"
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_FILE.unlink(missing_ok=True)
-    # Use relative path from symlink's parent dir so it resolves correctly
-    relative_target = run_log.relative_to(LOG_DIR)
-    LOG_FILE.symlink_to(relative_target)
+def stop_entry() -> None:
+    """Legacy entry point for thresher-stop."""
+    cli(["stop"], standalone_mode=True)
 
-    root = logging.getLogger("thresher")
-    root.setLevel(logging.DEBUG)
 
-    fmt = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
+# ---------------------------------------------------------------------------
+# Tmux helper
+# ---------------------------------------------------------------------------
+
+def _exec_in_tmux(argv: list[str]) -> None:
+    """Re-exec the current command inside a tmux split-pane layout."""
+    if not shutil.which("tmux"):
+        click.secho("tmux not found — running without split-pane UI.", fg="yellow")
+        click.secho("Install with: brew install tmux", fg="yellow")
+        os.environ[_TMUX_ENV_FLAG] = "1"
+        return
+
+    log_dir = LOG_DIR
+    log_file = log_dir / "scan.log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    if log_file.is_symlink():
+        target = log_file.resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_text("")
+    elif not log_file.exists():
+        log_file.write_text("")
+
+    subprocess.run(
+        ["tmux", "kill-session", "-t", _TMUX_SESSION],
+        capture_output=True,
     )
 
-    # Always log to file (write to the actual run log, not the symlink)
-    fh = logging.FileHandler(run_log)
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(fmt)
-    root.addHandler(fh)
+    inner_cmd = " ".join(shlex.quote(a) for a in argv)
+    scan_cmd = (
+        f"export {_TMUX_ENV_FLAG}=1; "
+        f"{inner_cmd}; "
+        f"echo ''; echo 'Scan finished. Press Ctrl-b + q to exit.'; read -r"
+    )
 
-    # Verbose mode also logs to stderr
-    if verbose:
-        sh = logging.StreamHandler(sys.stderr)
-        sh.setLevel(logging.DEBUG)
-        sh.setFormatter(fmt)
-        root.addHandler(sh)
+    subprocess.run(
+        ["tmux", "new-session", "-d", "-s", _TMUX_SESSION, "bash", "-c", scan_cmd],
+        check=True,
+    )
+    subprocess.run(
+        ["tmux", "split-window", "-h", "-t", _TMUX_SESSION, "-p", "40",
+         "tail", "-F", str(LOG_FILE)],
+        check=True,
+    )
+    for pane, title in [("0.0", "Scan"), ("0.1", "Logs")]:
+        subprocess.run(
+            ["tmux", "select-pane", "-t", f"{_TMUX_SESSION}:{pane}", "-T", title],
+            check=True,
+        )
+    subprocess.run(
+        ["tmux", "set-option", "-t", _TMUX_SESSION, "pane-border-status", "top"],
+        check=True,
+    )
+    subprocess.run(
+        ["tmux", "set-option", "-t", _TMUX_SESSION, "pane-border-format",
+         " #{pane_title} "],
+        check=True,
+    )
+    subprocess.run(
+        ["tmux", "set-option", "-t", _TMUX_SESSION, "mouse", "on"],
+        check=True,
+    )
+    subprocess.run(["tmux", "bind-key", "-T", "prefix", "h", "select-pane", "-L"])
+    subprocess.run(["tmux", "bind-key", "-T", "prefix", "l", "select-pane", "-R"])
+    subprocess.run(
+        ["tmux", "bind-key", "-T", "prefix", "q",
+         "kill-session", "-t", _TMUX_SESSION],
+    )
+    subprocess.run(
+        ["tmux", "select-pane", "-t", f"{_TMUX_SESSION}:0.0"],
+        check=True,
+    )
+    subprocess.run(["tmux", "attach-session", "-t", _TMUX_SESSION])
+    _stop_all()
 
 
-def stop_all() -> None:
-    """Kill all thresher VMs and the tmux session.
+# ---------------------------------------------------------------------------
+# Scan pipeline
+# ---------------------------------------------------------------------------
 
-    The base VM (``thresher-base``) is stopped but preserved.
-    Ephemeral VMs (``thresher-<timestamp>``) are destroyed.
-    """
+def _run_scan(config: ScanConfig) -> None:
+    """Execute the full scan pipeline."""
+    from thresher.vm.lima import (
+        BASE_VM_NAME,
+        base_exists,
+        clean_working_dirs,
+        create_vm,
+        destroy_vm,
+        ensure_base_running,
+        provision_vm,
+        stop_vm,
+    )
+
+    scan_id = _SCAN_TIMESTAMP
+
+    print_splash("v0.2.0", "thresher.sh")
+    print_scan_header(config.repo_url)
+
+    using_base = base_exists()
+
+    vm_name = None
+    try:
+        if using_base:
+            with FinSpinner("Starting cached base VM"):
+                vm_name = ensure_base_running()
+            with FinSpinner("Cleaning working directories"):
+                clean_working_dirs(vm_name)
+        else:
+            with FinSpinner("Creating isolated VM"):
+                vm_name = create_vm(config)
+            with FinSpinner("Provisioning VM (installing scanners)"):
+                provision_vm(vm_name, config)
+
+        from thresher.vm.ssh import ssh_exec
+        from thresher.docker.sandbox import download_dependencies
+
+        with FinSpinner("Cloning repository (hardened)"):
+            safe_url = shlex.quote(config.repo_url)
+            stdout, stderr, rc = ssh_exec(
+                vm_name,
+                f"bash /opt/thresher/bin/safe_clone.sh {safe_url} /opt/target",
+                timeout=300,
+            )
+            if rc != 0:
+                raise RuntimeError(f"git clone failed (exit {rc}): {stderr}")
+
+        if not config.skip_ai:
+            from thresher.agents.predep import run_predep_discovery
+            with FinSpinner("Discovering hidden dependencies"):
+                run_predep_discovery(vm_name, config)
+
+        with FinSpinner("Resolving dependencies"):
+            download_dependencies(vm_name, config)
+
+        from thresher.scanners.runner import run_all_scanners
+
+        with FinSpinner("Vulnerability scanners (22 tools)"):
+            scanner_status = run_all_scanners(vm_name, config)
+
+        if not config.skip_ai:
+            from thresher.agents.analysts import run_all_analysts, ANALYST_DEFINITIONS
+            from thresher.agents.adversarial import run_adversarial_verification
+
+            print_stage_ok("AI analyst panel")
+            print()
+
+            with FinSpinner("Running 8 analyst agents"):
+                run_all_analysts(vm_name, config)
+
+            for analyst_def in ANALYST_DEFINITIONS:
+                num = analyst_def["number"]
+                name = analyst_def["name"]
+                display = ANALYST_DISPLAY_NAMES.get(name, name)
+                print_analyst_status(num, display, "done")
+
+            print()
+            with FinSpinner("Adversarial verification"):
+                run_adversarial_verification(vm_name, config)
+
+        from thresher.report.synthesize import generate_report
+
+        with FinSpinner("Report synthesis"):
+            report_path = generate_report(vm_name, config)
+
+        from thresher.vm.safe_io import ssh_copy_from_safe, validate_report_structure
+
+        output = Path(config.output_dir) / scan_id
+        output.mkdir(parents=True, exist_ok=True)
+        ssh_copy_from_safe(vm_name, report_path, str(output))
+        validate_report_structure(output)
+
+        print_stage_ok("Report synthesis")
+
+        print()
+        print_swim_divider()
+        print_report_path(str(output))
+        print_swim_divider()
+
+    finally:
+        if vm_name:
+            if using_base:
+                click.echo("Stopping base VM...")
+                stop_vm(vm_name)
+            else:
+                click.echo("Destroying VM...")
+                destroy_vm(vm_name)
+
+
+# ---------------------------------------------------------------------------
+# Stop helper
+# ---------------------------------------------------------------------------
+
+def _stop_all() -> None:
+    """Kill all thresher VMs and the tmux session."""
     import subprocess as sp
 
     from thresher.vm.lima import BASE_VM_NAME
 
-    # Kill tmux session
     sp.run(["tmux", "kill-session", "-t", _TMUX_SESSION], capture_output=True)
 
-    # List scanner VMs
     result = sp.run(
         ["limactl", "list", "--format", "{{.Name}}"],
         capture_output=True,
@@ -468,8 +459,8 @@ def stop_all() -> None:
     count = 0
     for vm in vms:
         if vm == BASE_VM_NAME:
-            click.echo(f"Stopping {vm} (preserving base image)...")
-            sp.run(["limactl", "stop", vm], capture_output=True)
+            click.echo(f"Force-stopping {vm} (preserving base image)...")
+            sp.run(["limactl", "stop", "-f", vm], capture_output=True, timeout=30)
         else:
             click.echo(f"Destroying {vm}...")
             sp.run(["limactl", "delete", "-f", vm], capture_output=True)
@@ -478,5 +469,53 @@ def stop_all() -> None:
     click.secho(f"Stopped {count} VM(s).", fg="green")
 
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+_SCAN_TIMESTAMP: str = ""
+
+
+def _setup_logging(verbose: bool, log_dir: str = "", scan_id: str = "") -> None:
+    """Configure logging to file (always) and stderr (if verbose)."""
+    global LOG_DIR, LOG_FILE, _SCAN_TIMESTAMP
+    import datetime
+
+    if log_dir:
+        LOG_DIR = Path(log_dir)
+
+    _SCAN_TIMESTAMP = scan_id or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = LOG_DIR / _SCAN_TIMESTAMP
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    run_log = run_dir / "scan.log"
+    run_log.write_text("")
+
+    LOG_FILE = LOG_DIR / "scan.log"
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_FILE.unlink(missing_ok=True)
+    relative_target = run_log.relative_to(LOG_DIR)
+    LOG_FILE.symlink_to(relative_target)
+
+    root = logging.getLogger("thresher")
+    root.setLevel(logging.DEBUG)
+
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    fh = logging.FileHandler(run_log)
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+
+    if verbose:
+        sh = logging.StreamHandler(sys.stderr)
+        sh.setLevel(logging.DEBUG)
+        sh.setFormatter(fmt)
+        root.addHandler(sh)
+
+
 if __name__ == "__main__":
-    main()
+    cli()

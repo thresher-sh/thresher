@@ -28,7 +28,7 @@ pip install -e .
 ```
 
 ```bash
-thresher https://github.com/owner/repo
+thresher scan https://github.com/owner/repo
 ```
 
 ---
@@ -111,34 +111,34 @@ Each runs as a Claude Code headless agent inside the VM with specialized tools.
 
 ```bash
 # Full scan with AI analysis
-thresher https://github.com/owner/repo
+thresher scan https://github.com/owner/repo
 
 # Deterministic scanners only (no API key needed)
-thresher https://github.com/owner/repo --skip-ai
+thresher scan https://github.com/owner/repo --skip-ai
 
 # Custom VM resources
-thresher https://github.com/owner/repo --cpus 8 --memory 16 --disk 100
+thresher scan https://github.com/owner/repo --cpus 8 --memory 16 --disk 100
 
 # Download high-risk hidden dependencies (binaries, tarballs)
-thresher https://github.com/owner/repo --high-risk-dep
+thresher scan https://github.com/owner/repo --high-risk-dep
 
 # With tmux split-pane UI (scan left, logs right)
-thresher https://github.com/owner/repo --tmux
+thresher scan https://github.com/owner/repo --tmux
 ```
 
 With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv run thresher https://github.com/owner/repo --skip-ai
+uv run thresher scan https://github.com/owner/repo --skip-ai
 ```
 
 ### Commands
 
 | Command | What It Does |
 |---------|-------------|
-| `thresher <url>` | Scan a repository |
-| `thresher-build` | Build/rebuild the cached base VM image |
-| `thresher-stop` | Stop all VMs and tmux session |
+| `thresher scan <url>` | Scan a repository |
+| `thresher build` | Build/rebuild the cached base VM image |
+| `thresher stop` | Stop all VMs and tmux session |
 
 ### Flags
 

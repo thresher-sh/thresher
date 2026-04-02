@@ -25,7 +25,7 @@ _RULES_DIR = _PROJECT_ROOT / "rules"
 
 # Polling settings
 _POLL_INTERVAL = 2  # seconds
-_SSH_TIMEOUT = 120  # seconds
+_SSH_TIMEOUT = 300  # seconds (first boot can be slow)
 
 # Base VM image name — provisioned once, reused across scans.
 BASE_VM_NAME = "thresher-base"
@@ -92,14 +92,36 @@ def create_vm(config: ScanConfig) -> str:
 
 
 def start_vm(vm_name: str) -> None:
-    """Start a Lima VM, then wait for SSH to be ready."""
+    """Start a Lima VM, then wait for SSH to be ready.
+
+    Uses streaming output so progress is visible during first boot
+    (image download, cloud-init, etc.).
+    """
     logger.info("Starting VM %s", vm_name)
-    result = _run_limactl(["limactl", "start", vm_name], timeout=600)
-    if result.returncode != 0:
-        raise LimaError(f"Failed to start VM '{vm_name}': {result.stderr}")
+
+    try:
+        proc = subprocess.Popen(
+            ["limactl", "start", vm_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise LimaError("limactl not found. Install Lima: https://lima-vm.io") from exc
+
+    # Stream output to logger so it shows up in logs/tmux
+    for line in proc.stdout:
+        stripped = line.rstrip("\n")
+        if stripped:
+            logger.info("  %s", stripped)
+
+    proc.wait()
+    if proc.returncode != 0:
+        raise LimaError(f"Failed to start VM '{vm_name}' (exit {proc.returncode})")
 
     logger.info("VM %s started, waiting for SSH...", vm_name)
     _wait_for_ssh(vm_name)
+    logger.info("VM %s is ready", vm_name)
     logger.info("VM %s is ready", vm_name)
 
 
@@ -132,16 +154,21 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
         raise LimaError(f"Firewall script not found: {firewall_script_path}")
     ssh_copy_to(vm_name, str(firewall_script_path), "/tmp/firewall.sh")
 
-    # Copy safe_clone.sh (hardened git clone script)
+    # Copy runtime scripts to /opt/thresher/bin/ (persists across reboots,
+    # unlike /tmp/ which is cleared). These are needed during scans, not
+    # just during provisioning.
+    ssh_exec(vm_name, "sudo mkdir -p /opt/thresher/bin && sudo chmod 777 /opt/thresher/bin")
+
     safe_clone_script = _VM_SCRIPTS_DIR / "safe_clone.sh"
     if not safe_clone_script.exists():
         raise LimaError(f"Safe clone script not found: {safe_clone_script}")
-    ssh_copy_to(vm_name, str(safe_clone_script), "/tmp/safe_clone.sh")
+    ssh_copy_to(vm_name, str(safe_clone_script), "/opt/thresher/bin/safe_clone.sh")
+    ssh_exec(vm_name, "sudo chmod +x /opt/thresher/bin/safe_clone.sh")
 
-    # Copy predep output validation hook (used by Stage 1 agent)
     validate_script = _VM_SCRIPTS_DIR / "validate_predep_output.sh"
     if validate_script.exists():
-        ssh_copy_to(vm_name, str(validate_script), "/tmp/validate_predep_output.sh")
+        ssh_copy_to(vm_name, str(validate_script), "/opt/thresher/bin/validate_predep_output.sh")
+        ssh_exec(vm_name, "sudo chmod +x /opt/thresher/bin/validate_predep_output.sh")
 
     # Copy scanner-deps Docker build context (Dockerfile + scripts)
     docker_dir = _PROJECT_ROOT / "docker"
@@ -163,7 +190,7 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
     # Copy custom scanner rules (Semgrep supply-chain rules, etc.)
     semgrep_rules_dir = _RULES_DIR / "semgrep"
     if semgrep_rules_dir.exists():
-        ssh_exec(vm_name, "mkdir -p /opt/rules/semgrep")
+        ssh_exec(vm_name, "sudo mkdir -p /opt/rules/semgrep && sudo chmod 777 /opt/rules/semgrep")
         for rule_file in sorted(semgrep_rules_dir.iterdir()):
             if rule_file.is_file():
                 ssh_copy_to(
@@ -186,12 +213,29 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
     env = config.ai_env()
 
     # Run provision.sh (installs all tools, builds Docker images)
+    # Use progress bar — provision.sh has ~30 major [provision] log lines
+    from thresher.branding import FinProgressBar
+
+    _provision_bar = FinProgressBar("Provisioning", total=100)
+    _provision_step = [0]  # mutable for closure
+
+    def _on_provision_line(line: str) -> None:
+        if "[provision]" in line:
+            _provision_step[0] += 1
+            # Extract the message after the timestamp
+            parts = line.split("] ", 1)
+            status = parts[1][:30] if len(parts) > 1 else ""
+            _provision_bar.update(_provision_step[0], status)
+
     stdout, stderr, rc = ssh_exec(
         vm_name,
         "chmod +x /tmp/provision.sh && sudo /tmp/provision.sh",
         timeout=900,  # provisioning can take a while
         env=env,
+        on_stdout=_on_provision_line,
     )
+    _provision_bar.finish()
+
     if rc != 0:
         raise LimaError(
             f"Provisioning failed (exit {rc}):\nstdout: {stdout}\nstderr: {stderr}"
@@ -279,7 +323,7 @@ def ensure_base_running() -> str:
     if status == "Not found":
         raise LimaError(
             f"Base VM '{BASE_VM_NAME}' not found. "
-            "Run `thresher-build` first to create the cached base image."
+            "Run `thresher build` first to create the cached base image."
         )
     if status != "Running":
         start_vm(BASE_VM_NAME)
@@ -298,9 +342,9 @@ def clean_working_dirs(vm_name: str) -> None:
 
 
 def stop_vm(vm_name: str) -> None:
-    """Stop a Lima VM without deleting it."""
-    logger.info("Stopping VM %s", vm_name)
-    result = _run_limactl(["limactl", "stop", vm_name], timeout=120)
+    """Force-stop a Lima VM without deleting it."""
+    logger.info("Force-stopping VM %s", vm_name)
+    result = _run_limactl(["limactl", "stop", "-f", vm_name], timeout=30)
     if result.returncode != 0:
         raise LimaError(f"Failed to stop VM '{vm_name}': {result.stderr}")
 

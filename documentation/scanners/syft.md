@@ -107,8 +107,8 @@ limactl shell <vm-name> -- syft version
 
 Syft is installed during VM provisioning. Rebuild the base VM to get the latest version:
 ```bash
-thresher-stop
-thresher-build
+thresher stop
+thresher build
 ```
 
 ## Relationship to Other Scanners

@@ -6,6 +6,9 @@ Pure Python — no external dependencies, just ANSI escape sequences.
 
 from __future__ import annotations
 
+import sys
+import threading
+
 # ── ANSI color constants ──────────────────────────────────────────
 
 RESET = '\033[0m'
@@ -120,6 +123,110 @@ def print_swim_divider() -> None:
     """Print the ~~~_/|~~~ divider in violet."""
     print(f"  {VIOLET}~~~~~~~~~~~_/|~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{RESET}")
     print()
+
+
+class FinSpinner:
+    """Animated shark fin spinner for long-running operations.
+
+    Usage:
+        with FinSpinner("Building VM"):
+            do_long_operation()
+        # Automatically shows [OK] when done, [!!] on exception
+    """
+
+    _FRAMES = ["_/|", "_//", "__/", "\\__", "\\_/", "/\\_", "|/_", "|\\_"]
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._failed = False
+
+    def __enter__(self) -> "FinSpinner":
+        self._stop_event.clear()
+        self._failed = False
+        self._thread = threading.Thread(target=self._animate, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self._failed = exc_type is not None
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+        # Clear the spinner line and print final status
+        sys.stdout.write(f"\r\033[K")
+        sys.stdout.flush()
+        if self._failed:
+            print_stage_fail(self.label)
+        else:
+            print_stage_ok(self.label)
+        return None  # don't suppress exceptions
+
+    def _animate(self) -> None:
+        i = 0
+        while not self._stop_event.is_set():
+            frame = self._FRAMES[i % len(self._FRAMES)]
+            sys.stdout.write(
+                f"\r  {VIOLET}{frame}{RESET} {GRAY}{self.label}{RESET}  "
+            )
+            sys.stdout.flush()
+            i += 1
+            self._stop_event.wait(0.12)
+
+
+class FinProgressBar:
+    """Animated shark fin progress bar for staged operations.
+
+    Usage:
+        bar = FinProgressBar("Provisioning", total=25)
+        bar.update(1, "Installing Git")
+        bar.update(2, "Installing Docker")
+        ...
+        bar.finish()
+    """
+
+    def __init__(self, label: str, total: int, width: int = 40) -> None:
+        self.label = label
+        self.total = total
+        self.width = width
+        self._current = 0
+        self._status = ""
+
+    def update(self, current: int, status: str = "") -> None:
+        """Update progress bar to current step."""
+        self._current = min(current, self.total)
+        self._status = status
+        self._draw()
+
+    def _draw(self) -> None:
+        pct = self._current / self.total if self.total > 0 else 0
+        filled = int(self.width * pct)
+        fin = "_/|"
+
+        if filled < self.width - 3:
+            bar = "=" * filled + fin + " " * (self.width - filled - 3)
+        else:
+            bar = "=" * self.width
+
+        pct_str = f"{int(pct * 100)}%"
+        status = self._status[:30] if self._status else ""
+
+        sys.stdout.write(
+            f"\r  {GRAY}{self.label} [{VIOLET}{bar}{GRAY}] "
+            f"{WHITE}{pct_str}{RESET} {DIM}{status}{RESET}\033[K"
+        )
+        sys.stdout.flush()
+
+    def finish(self) -> None:
+        """Complete the progress bar."""
+        self._current = self.total
+        filled = "=" * self.width
+        sys.stdout.write(
+            f"\r  {GRAY}{self.label} [{GREEN}{filled}{GRAY}] "
+            f"{GREEN}done{RESET}\033[K\n"
+        )
+        sys.stdout.flush()
 
 
 def print_analyst_status(number: int, name: str, status: str) -> None:

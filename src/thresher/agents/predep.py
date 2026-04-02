@@ -137,7 +137,7 @@ def run_predep_discovery(
             "Stop": [{
                 "hooks": [{
                     "type": "command",
-                    "command": "/tmp/validate_predep_output.sh",
+                    "command": "/opt/thresher/bin/validate_predep_output.sh",
                     "timeout": 30,
                 }]
             }]

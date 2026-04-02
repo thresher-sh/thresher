@@ -119,8 +119,8 @@ class TestProvisionVM:
         assert "/tmp/provision.sh" in copied_destinations
         assert "/tmp/firewall.sh" in copied_destinations
 
-        # Source download hardening
-        assert "/tmp/safe_clone.sh" in copied_destinations
+        # Source download hardening (persistent path, survives reboots)
+        assert "/opt/thresher/bin/safe_clone.sh" in copied_destinations
 
         # Scanner-deps Docker build context
         assert "/tmp/docker-scanner-deps/Dockerfile.scanner-deps" in copied_destinations
@@ -184,7 +184,7 @@ class TestStopVm:
     def test_stops_vm(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
         stop_vm("test-vm")
-        mock_run.assert_called_once_with(["limactl", "stop", "test-vm"], timeout=120)
+        mock_run.assert_called_once_with(["limactl", "stop", "-f", "test-vm"], timeout=30)
 
     @patch("thresher.vm.lima._run_limactl")
     def test_raises_on_failure(self, mock_run):

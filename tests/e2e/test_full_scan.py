@@ -86,7 +86,7 @@ class TestSkipAIScan:
         # Clone a small repo using the hardened safe_clone.sh script
         result = ssh_exec(
             vm_name,
-            "bash /tmp/safe_clone.sh https://github.com/pallets/markupsafe /opt/target",
+            "bash /opt/thresher/bin/safe_clone.sh https://github.com/pallets/markupsafe /opt/target",
             timeout=300,
         )
         assert result.exit_code == 0, f"safe_clone failed: {result.stderr}"

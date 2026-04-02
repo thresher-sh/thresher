@@ -111,8 +111,8 @@ limactl shell <vm-name> -- yara --version
 **Fix**:
 ```bash
 # Rebuild base VM
-thresher-stop
-thresher-build
+thresher stop
+thresher build
 ```
 
 ### False positives
