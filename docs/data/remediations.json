@@ -5,7 +5,7 @@
       "repo_url": "https://github.com/BuilderIO/agent-native",
       "pr_number": 127,
       "pr_url": "https://github.com/BuilderIO/agent-native/pull/127",
-      "report_url": "data/prs/agent-native-127.md",
+      "report_url": "data/prs/BuilderIO_agent-native_127.md",
       "scan_date": "2026-04-02",
       "findings": {
         "total_deterministic": 518,
