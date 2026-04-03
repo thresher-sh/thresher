@@ -161,7 +161,7 @@ Lists pre-built VM images available from GitHub releases.
 
 ```bash
 thresher import latest                    # Latest release
-thresher import v0.2.0                    # Specific version
+thresher import v0.2.1                    # Specific version
 thresher import https://example.com/img   # Direct URL
 thresher import ./thresher-base.qcow2     # Local file
 ```
@@ -170,7 +170,7 @@ thresher import ./thresher-base.qcow2     # Local file
 
 ```bash
 thresher export
-thresher export --output release/v0.2.0.qcow2
+thresher export --output release/v0.2.1.qcow2
 ```
 
 Creates a compressed qcow2 image from your built base VM. Attach to a GitHub release for others to import.
