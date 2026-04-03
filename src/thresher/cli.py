@@ -180,7 +180,7 @@ def build(
     )
 
     try:
-        print_splash("v0.2.1", "thresher.sh")
+        print_splash("v0.2.2", "thresher.sh")
 
         if base_exists():
             with FinSpinner("Removing existing base VM"):
@@ -265,7 +265,7 @@ def list_images() -> None:
     try:
         req = urllib.request.Request(
             API_URL,
-            headers={"User-Agent": "thresher/0.2.1", "Accept": "application/vnd.github+json"},
+            headers={"User-Agent": "thresher/0.2.2", "Accept": "application/vnd.github+json"},
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             releases = json.loads(resp.read())
@@ -386,9 +386,9 @@ def import_image(image_source: str, cpus: int | None, memory: int | None, disk: 
 
     IMAGE_SOURCE can be:
       - A local file path: thresher-base.qcow2
-      - A URL: https://github.com/thresher-sh/thresher/releases/download/v0.2.1/thresher-base.qcow2
+      - A URL: https://github.com/thresher-sh/thresher/releases/download/v0.2.2/thresher-base.qcow2
       - A GitHub release shorthand: latest (downloads from latest release)
-      - A GitHub release tag: v0.2.1
+      - A GitHub release tag: v0.2.2
     """
     import urllib.request
     import urllib.error
@@ -419,20 +419,20 @@ def import_image(image_source: str, cpus: int | None, memory: int | None, disk: 
         download_url = None  # local file
     else:
         print_error(
-            f"Cannot resolve '{image_source}'. Use a file path, URL, 'latest', or a version tag (v0.2.1)."
+            f"Cannot resolve '{image_source}'. Use a file path, URL, 'latest', or a version tag (v0.2.2)."
         )
         sys.exit(1)
 
     try:
         # Download if needed
         if download_url:
-            print_splash("v0.2.1", "thresher.sh")
+            print_splash("v0.2.2", "thresher.sh")
             local_image = Path(tempfile.mkdtemp()) / ASSET_NAME
 
             def _download() -> None:
                 req = urllib.request.Request(
                     download_url,
-                    headers={"User-Agent": "thresher/0.2.1"},
+                    headers={"User-Agent": "thresher/0.2.2"},
                 )
                 try:
                     with urllib.request.urlopen(req, timeout=600) as resp:
@@ -459,7 +459,7 @@ def import_image(image_source: str, cpus: int | None, memory: int | None, disk: 
             size_mb = local_image.stat().st_size / (1024 * 1024)
             print_stage_ok(f"Downloaded ({size_mb:.0f} MB)")
         else:
-            print_splash("v0.2.1", "thresher.sh")
+            print_splash("v0.2.2", "thresher.sh")
             local_image = Path(image_source)
 
         if base_exists():
@@ -619,7 +619,7 @@ def _run_scan(config: ScanConfig) -> None:
 
     scan_id = _SCAN_TIMESTAMP
 
-    print_splash("v0.2.1", "thresher.sh")
+    print_splash("v0.2.2", "thresher.sh")
     print_scan_header(config.repo_url)
 
     using_base = base_exists()
