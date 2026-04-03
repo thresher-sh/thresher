@@ -22,21 +22,48 @@
         "dependency_upgrades": 13,
         "app_security_fixes": 12,
         "secrets_remediated": 1,
-        "ci_cd_hardening": 6
+        "ci_cd_hardening": 6,
+        "cves_resolved": 20
+      }
+    },
+    {
+      "repo": "coderabbitai/git-worktree-runner",
+      "repo_url": "https://github.com/coderabbitai/git-worktree-runner",
+      "pr_number": 162,
+      "pr_url": "https://github.com/coderabbitai/git-worktree-runner/pull/162",
+      "report_url": "data/prs/coderabbitai_git-worktree-runner_draft.md",
+      "scan_date": "2026-04-03",
+      "findings": {
+        "total_deterministic": 4,
+        "total_ai": 45,
+        "critical": 0,
+        "high": 4,
+        "medium": 6,
+        "low": 38,
+        "supply_chain": 0,
+        "malicious_code": 0,
+        "cisa_kev": 0
+      },
+      "remediations": {
+        "dependency_upgrades": 0,
+        "app_security_fixes": 9,
+        "secrets_remediated": 0,
+        "ci_cd_hardening": 3,
+        "cves_resolved": 0
       }
     }
   ],
   "totals": {
-    "projects_scanned": 1,
-    "total_findings": 562,
+    "projects_scanned": 2,
+    "total_findings": 611,
     "total_critical": 2,
-    "total_high": 28,
-    "total_medium": 5,
+    "total_high": 32,
+    "total_medium": 11,
     "total_supply_chain_findings": 13,
-    "total_app_security_fixes": 12,
+    "total_app_security_fixes": 21,
     "total_secrets_remediated": 1,
-    "total_ci_cd_fixes": 6,
+    "total_ci_cd_fixes": 9,
     "total_dependency_upgrades": 13,
-    "total_cves_resolved": 22
+    "total_cves_resolved": 20
   }
 }
