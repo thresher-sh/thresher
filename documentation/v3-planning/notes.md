@@ -1,6 +1,6 @@
 Snapshot and confirm SHA Checksums of dependencies we are downloading and installing. 
 
-For example YARA git clone... 
+For example YARA git clone... pin itt.
 
 ---
 
@@ -45,3 +45,4 @@ Shallow git clone breaks forensic abilities
 -----
 
 Figure out safe way to proxy git ssh token to access private repositories...
+Add in local git access
