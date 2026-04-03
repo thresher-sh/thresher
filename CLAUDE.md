@@ -127,7 +127,7 @@ thresher scan <repo_url>  # Scan a repository
 thresher build            # Build/rebuild the base VM image
 thresher stop             # Stop all VMs and tmux session
 thresher list             # List available pre-built images from releases
-thresher import <source>  # Import pre-built image (latest, v0.2.1, URL, or file)
+thresher import <source>  # Import pre-built image (latest, v0.2.2, URL, or file)
 thresher export           # Export base VM image for distribution
 thresher                  # Show help with available commands
 ```
