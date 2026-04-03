@@ -1,0 +1,1594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thresher — BuilderIO/agent-native Security Scan Report</title>
+<link rel="icon" type="image/png" href="favicon-purple-black.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --deep-black: #0a0a0a;
+    --terminal-black: #1a1a1a;
+    --charcoal: #2a2a2a;
+    --steel: #6b7280;
+    --bone: #e5e5e5;
+    --white: #fafafa;
+    --arctic: #f0f9ff;
+    --violet: #a78bfa;
+    --violet-dim: rgba(167, 139, 250, 0.15);
+    --violet-glow: rgba(167, 139, 250, 0.08);
+    --threat-red: #ef4444;
+    --safe-green: #22c55e;
+    --amber: #f59e0b;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--deep-black);
+    color: var(--bone);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  a { color: var(--violet); text-decoration: none; transition: color 0.15s; }
+  a:hover { color: var(--arctic); }
+
+  /* -- Nav ------------------------------------------------- */
+  nav {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 100;
+    background: rgba(10, 10, 10, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--charcoal);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-back {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--steel);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .nav-back:hover { color: var(--arctic); }
+
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+  .nav-links a {
+    color: var(--steel);
+    text-decoration: none;
+    font-size: 13px;
+    transition: color 0.15s;
+  }
+  .nav-links a:hover { color: var(--arctic); }
+
+  /* -- Layout ---------------------------------------------- */
+  .container {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 100px 24px 80px;
+  }
+
+  .section {
+    margin-bottom: 80px;
+  }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--violet);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 16px;
+  }
+
+  .section h2 {
+    font-family: var(--mono);
+    font-size: clamp(20px, 3vw, 28px);
+    font-weight: 700;
+    color: var(--arctic);
+    letter-spacing: -0.5px;
+    margin-bottom: 24px;
+  }
+
+  /* -- Hero ------------------------------------------------ */
+  .report-hero {
+    padding: 40px 0 60px;
+    border-bottom: 1px solid var(--charcoal);
+    margin-bottom: 60px;
+  }
+
+  .report-hero .meta {
+    font-size: 12px;
+    color: var(--steel);
+    margin-bottom: 12px;
+  }
+
+  .report-hero h1 {
+    font-family: var(--mono);
+    font-size: clamp(24px, 4vw, 40px);
+    font-weight: 700;
+    color: var(--arctic);
+    letter-spacing: -1px;
+    margin-bottom: 8px;
+  }
+
+  .report-hero .subtitle {
+    font-size: 14px;
+    color: var(--steel);
+    margin-bottom: 32px;
+  }
+
+  .verdict-box {
+    display: inline-block;
+    border: 2px solid var(--threat-red);
+    background: rgba(239, 68, 68, 0.08);
+    padding: 16px 32px;
+    border-radius: 8px;
+    margin-bottom: 32px;
+  }
+
+  .verdict-label {
+    font-size: 11px;
+    color: var(--steel);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+
+  .verdict-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--threat-red);
+    letter-spacing: 2px;
+  }
+
+  .summary-counts {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .count-crit { color: var(--threat-red); }
+  .count-high { color: var(--amber); }
+  .count-med { color: var(--steel); }
+  .count-low { color: #4b5563; }
+
+  /* -- Prose ----------------------------------------------- */
+  .prose {
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--bone);
+    max-width: 780px;
+  }
+
+  .prose p { margin-bottom: 16px; }
+
+  .prose strong { color: var(--arctic); }
+
+  .verdict-callout {
+    border-left: 3px solid var(--threat-red);
+    background: rgba(239, 68, 68, 0.06);
+    padding: 16px 20px;
+    border-radius: 0 6px 6px 0;
+    margin: 24px 0;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--threat-red);
+  }
+
+  .mitigations {
+    list-style: none;
+    padding: 0;
+  }
+  .mitigations li {
+    padding: 8px 0;
+    padding-left: 20px;
+    position: relative;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--bone);
+  }
+  .mitigations li::before {
+    content: '>';
+    position: absolute;
+    left: 0;
+    color: var(--violet);
+    font-weight: 700;
+  }
+
+  /* -- Findings Bar ---------------------------------------- */
+  .findings-bar-section {
+    margin-bottom: 60px;
+  }
+
+  .bar-track {
+    display: flex;
+    height: 36px;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    border: 1px solid var(--charcoal);
+  }
+
+  .bar-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--deep-black);
+    white-space: nowrap;
+    padding: 0 8px;
+    min-width: 40px;
+  }
+
+  .bar-label {
+    font-size: 12px;
+    color: var(--steel);
+    margin-bottom: 10px;
+  }
+
+  /* -- Table ----------------------------------------------- */
+  .findings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .findings-table thead th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--steel);
+    border-bottom: 1px solid var(--charcoal);
+    font-weight: 600;
+  }
+
+  .findings-table tbody td {
+    padding: 12px 12px;
+    border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+    vertical-align: top;
+  }
+
+  .findings-table tbody tr:hover {
+    background: rgba(167, 139, 250, 0.03);
+  }
+
+  .sev-crit {
+    color: var(--threat-red);
+    font-weight: 700;
+  }
+  .sev-high {
+    color: var(--amber);
+    font-weight: 700;
+  }
+  .sev-med {
+    color: var(--steel);
+    font-weight: 600;
+  }
+
+  .cve-tag {
+    font-size: 12px;
+    color: var(--steel);
+  }
+
+  .cvss-tag {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+
+  .cvss-crit { background: rgba(239, 68, 68, 0.15); color: var(--threat-red); }
+  .cvss-high { background: rgba(245, 158, 11, 0.15); color: var(--amber); }
+  .cvss-med  { background: rgba(107, 114, 128, 0.15); color: var(--steel); }
+
+  /* -- Details / Collapsible ------------------------------- */
+  details {
+    border: 1px solid var(--charcoal);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  details:hover {
+    border-color: #3a3a3a;
+  }
+
+  details[open] {
+    border-color: var(--charcoal);
+  }
+
+  summary {
+    padding: 16px 20px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--arctic);
+    background: var(--terminal-black);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    user-select: none;
+  }
+
+  summary::-webkit-details-marker { display: none; }
+
+  summary::before {
+    content: '+';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--violet);
+    border: 1px solid var(--charcoal);
+    border-radius: 4px;
+  }
+
+  details[open] > summary::before {
+    content: '-';
+  }
+
+  .details-body {
+    padding: 20px;
+    font-size: 13px;
+    line-height: 1.7;
+    background: var(--deep-black);
+  }
+
+  /* -- AI Finding Cards ------------------------------------ */
+  .ai-section {
+    border-left: 3px solid var(--violet);
+    padding-left: 0;
+  }
+
+  .ai-card {
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+
+  .ai-card:hover {
+    border-color: rgba(167, 139, 250, 0.3);
+  }
+
+  .ai-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .ai-card-title {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--arctic);
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .ai-card-sev {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 4px 12px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .ai-card-sev.crit {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--threat-red);
+  }
+
+  .ai-card-sev.high {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--amber);
+  }
+
+  .ai-card-sev.med {
+    background: rgba(107, 114, 128, 0.15);
+    color: var(--steel);
+  }
+
+  .ai-card-file {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--violet);
+    margin-bottom: 10px;
+    word-break: break-all;
+  }
+
+  .ai-card-desc {
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--bone);
+    line-height: 1.7;
+    margin-bottom: 12px;
+  }
+
+  .ai-card-meta {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--steel);
+  }
+
+  .confidence-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .confidence-fill {
+    width: 60px;
+    height: 4px;
+    background: var(--charcoal);
+    border-radius: 2px;
+    overflow: hidden;
+    display: inline-block;
+    position: relative;
+  }
+
+  .confidence-fill span {
+    display: block;
+    height: 100%;
+    background: var(--violet);
+    border-radius: 2px;
+  }
+
+  .analyst-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .analyst-tag {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--violet);
+    background: var(--violet-dim);
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.3px;
+  }
+
+  /* -- Upgrade Table --------------------------------------- */
+  .upgrade-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .upgrade-table thead th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--steel);
+    border-bottom: 1px solid var(--charcoal);
+    font-weight: 600;
+  }
+
+  .upgrade-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+    vertical-align: top;
+  }
+
+  .upgrade-table tbody tr:hover {
+    background: rgba(167, 139, 250, 0.03);
+  }
+
+  .pkg-name {
+    color: var(--arctic);
+    font-weight: 600;
+  }
+
+  .ver-old { color: var(--threat-red); }
+  .ver-new { color: var(--safe-green); }
+
+  /* -- Trust Assessment ------------------------------------ */
+  .trust-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+  }
+
+  .trust-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--bone);
+  }
+
+  .trust-icon {
+    font-size: 16px;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+    color: var(--threat-red);
+  }
+
+  /* -- PR / What Was Fixed --------------------------------- */
+  .fix-card {
+    background: var(--terminal-black);
+    border: 1px solid var(--safe-green);
+    border-radius: 8px;
+    padding: 28px;
+  }
+
+  .fix-card h3 {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--safe-green);
+    margin-bottom: 12px;
+  }
+
+  .fix-card p {
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--bone);
+    line-height: 1.7;
+    margin-bottom: 16px;
+  }
+
+  .fix-list {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 6px;
+  }
+
+  .fix-list li {
+    font-size: 13px;
+    color: var(--bone);
+    padding: 4px 0 4px 18px;
+    position: relative;
+  }
+
+  .fix-list li::before {
+    content: '\2713';
+    position: absolute;
+    left: 0;
+    color: var(--safe-green);
+    font-weight: 700;
+  }
+
+  /* -- Pipeline -------------------------------------------- */
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+  }
+
+  .pipeline-item {
+    font-size: 12px;
+    padding: 8px 12px;
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 4px;
+    color: var(--bone);
+  }
+
+  .pipeline-item.ai {
+    border-color: rgba(167, 139, 250, 0.3);
+    color: var(--violet);
+  }
+
+  /* -- CTA Footer ------------------------------------------ */
+  .cta-section {
+    text-align: center;
+    padding: 80px 24px;
+    border-top: 1px solid var(--charcoal);
+    position: relative;
+  }
+
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 300px;
+    background: radial-gradient(ellipse, var(--violet-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-ascii {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.25;
+    color: var(--violet);
+    white-space: pre;
+    margin-bottom: 32px;
+    opacity: 0.5;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cta-section h2 {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--arctic);
+    margin-bottom: 32px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .install-box {
+    background: var(--terminal-black);
+    border: 1px solid var(--violet);
+    border-radius: 8px;
+    padding: 20px 40px;
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: box-shadow 0.3s, border-color 0.3s;
+    position: relative;
+    z-index: 1;
+  }
+
+  .install-box:hover {
+    box-shadow: 0 0 40px var(--violet-glow), 0 0 80px rgba(167, 139, 250, 0.05);
+  }
+
+  .install-box .prompt { color: var(--steel); user-select: none; }
+  .install-box .cmd {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--arctic);
+  }
+  .install-box .cmd .domain { color: var(--violet); }
+
+  .copy-tooltip {
+    position: absolute;
+    right: -80px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--violet);
+    color: var(--deep-black);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 5px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, transform 0.15s;
+    transform: translateY(-50%) translateX(4px);
+  }
+
+  .copy-tooltip::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: var(--violet);
+    border-left: 0;
+  }
+
+  .copy-tooltip.show {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+
+  footer {
+    border-top: 1px solid var(--charcoal);
+    padding: 40px 24px;
+    text-align: center;
+    color: var(--steel);
+    font-size: 12px;
+  }
+
+  footer a {
+    color: var(--arctic);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  footer a:hover { color: var(--violet); }
+
+  /* -- Scrollbar ------------------------------------------- */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--deep-black); }
+  ::-webkit-scrollbar-thumb { background: var(--charcoal); border-radius: 3px; }
+
+  /* -- Responsive ------------------------------------------ */
+  @media (max-width: 768px) {
+    .container { padding: 80px 16px 60px; }
+    .summary-counts { gap: 12px; }
+    .ai-card-header { flex-direction: column; }
+    .trust-items { grid-template-columns: 1fr; }
+    .fix-list { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+    .findings-table { font-size: 12px; }
+    .findings-table thead th,
+    .findings-table tbody td { padding: 8px 6px; }
+    .upgrade-table { font-size: 12px; }
+    .upgrade-table thead th,
+    .upgrade-table tbody td { padding: 8px 6px; }
+    .install-box { padding: 16px 20px; }
+    .install-box .cmd { font-size: 13px; }
+    .copy-tooltip {
+      right: auto;
+      left: 50%;
+      top: -36px;
+      transform: translateX(-50%);
+    }
+    .copy-tooltip::before {
+      left: 50%;
+      top: auto;
+      bottom: -5px;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--violet);
+      border-bottom: 0;
+    }
+    .copy-tooltip.show {
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .bar-segment { font-size: 9px; min-width: 30px; }
+    .pipeline-grid { grid-template-columns: 1fr; }
+  }
+
+  /* -- Table horizontal scroll ----------------------------- */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <a href="index.html" class="nav-back">&larr; Back to thresher.sh</a>
+  <ul class="nav-links">
+    <li><a href="#executive-summary">Summary</a></li>
+    <li><a href="#scanner-findings">Scanners</a></li>
+    <li><a href="#ai-findings">AI Findings</a></li>
+    <li><a href="#upgrades">Upgrades</a></li>
+    <li><a href="#fixed">What Was Fixed</a></li>
+    <li><a href="https://github.com/thresher-sh/thresher">GitHub</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+
+<!-- Hero -->
+<div class="report-hero">
+  <div class="meta">SCAN DATE: 2026-04-02 &middot; THRESHER v0.2.0 &middot; 22 scanners + 8 AI analysts</div>
+  <h1>BuilderIO/agent-native</h1>
+  <p class="subtitle">Security Scan Report</p>
+
+  <div class="verdict-box">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-value">FIX DEPS BEFORE USE</div>
+  </div>
+
+  <div style="margin-top: 24px;">
+    <div class="summary-counts">
+      <span class="count-crit">2 Critical</span>
+      <span class="count-high">17 High (scanner) + 13 High (AI)</span>
+      <span class="count-med">11 Medium</span>
+    </div>
+  </div>
+</div>
+
+<!-- Executive Summary -->
+<div class="section" id="executive-summary">
+  <div class="section-title">// Executive Summary</div>
+  <div class="prose">
+    <p>Automated multi-tool security scanning (SCA, SAST, IaC, secrets detection) of this JavaScript/Node.js project produced <strong>518 findings across six tools</strong>. No P0-level indicators were detected. However, synthesis elevated rollup (<strong>CVE-2026-27606</strong>) from High to Critical based on NVD CVSS 9.8.</p>
+    <p>AI analysts independently discovered <strong>14 additional high-severity application security vulnerabilities</strong> that no scanner caught &mdash; including an IDOR, path traversals, stored XSS, and SQL injection.</p>
+  </div>
+
+  <div class="verdict-callout">
+    DO NOT USE &mdash; CVE-2026-27606 (rollup@4.46.2, CVSS 9.8) must be resolved before any production deployment.
+  </div>
+
+  <div style="margin-top: 24px;">
+    <div class="section-title" style="margin-bottom: 12px;">Required Mitigations</div>
+    <ul class="mitigations">
+      <li>Upgrade rollup to &ge;4.59.0 (resolves Critical CVE-2026-27606)</li>
+      <li>Remediate all High-severity dependency vulnerabilities</li>
+      <li>Rotate exposed API key in templates/slides/scripts/fetch-logos.ts</li>
+      <li>Re-scan after remediation to verify resolution</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Findings Summary Bar -->
+<div class="findings-bar-section">
+  <div class="section-title">// Findings Distribution</div>
+
+  <div class="bar-label">518 scanner findings</div>
+  <div class="bar-track">
+    <div class="bar-segment" style="flex: 0; min-width: 48px; background: var(--charcoal); color: var(--steel);">P0: 0</div>
+    <div class="bar-segment" style="flex: 1; background: var(--threat-red);">CRIT: 1</div>
+    <div class="bar-segment" style="flex: 17; background: var(--amber);">HIGH: 17</div>
+    <div class="bar-segment" style="flex: 11; background: var(--steel); color: var(--deep-black);">MED: 11</div>
+    <div class="bar-segment" style="flex: 50; background: var(--charcoal); color: var(--steel);">LOW: 352</div>
+  </div>
+
+  <div class="bar-label" style="margin-top: 16px;">28 AI analyst findings</div>
+  <div class="bar-track" style="border-color: rgba(167, 139, 250, 0.3);">
+    <div class="bar-segment" style="flex: 1; background: var(--threat-red);">CRIT: 1</div>
+    <div class="bar-segment" style="flex: 14; background: var(--amber);">HIGH: 14</div>
+    <div class="bar-segment" style="flex: 11; background: var(--steel); color: var(--deep-black);">MED: 11</div>
+    <div class="bar-segment" style="flex: 3; background: var(--charcoal); color: var(--steel);">LOW: 3</div>
+  </div>
+</div>
+
+<!-- Scanner Findings: Top 10 -->
+<div class="section" id="scanner-findings">
+  <div class="section-title">// Scanner Findings</div>
+  <h2>Top 10 by severity</h2>
+
+  <div class="table-wrap">
+    <table class="findings-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Severity</th>
+          <th>Package & Title</th>
+          <th>CVE</th>
+          <th>CVSS</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td class="sev-crit">Critical</td>
+          <td><span class="pkg-name">rollup@4.46.2</span> &mdash; Arbitrary File Write via Path Traversal</td>
+          <td class="cve-tag">CVE-2026-27606</td>
+          <td><span class="cvss-tag cvss-crit">9.8</span></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">multer@2.0.2</span> &mdash; DoS via Uncontrolled Recursion</td>
+          <td class="cve-tag">CVE-2026-3520</td>
+          <td><span class="cvss-tag cvss-high">8.7</span></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">minimatch@9.0.5</span> &mdash; ReDoS via Repeated Wildcards</td>
+          <td class="cve-tag">CVE-2026-26996</td>
+          <td><span class="cvss-tag cvss-high">8.7</span></td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">multer@2.0.2</span> &mdash; DoS via Resource Exhaustion</td>
+          <td class="cve-tag">CVE-2026-2359</td>
+          <td><span class="cvss-tag cvss-high">8.7</span></td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">lodash@4.17.21</span> &mdash; Code Injection via _.template</td>
+          <td class="cve-tag">CVE-2026-4800</td>
+          <td><span class="cvss-tag cvss-high">8.1</span></td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">@remix-run/router@1.23.0</span> &mdash; XSS via Open Redirects</td>
+          <td class="cve-tag">CVE-2026-22029</td>
+          <td><span class="cvss-tag cvss-high">8.0</span></td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">undici@7.23.0</span> &mdash; WebSocket Unhandled Exception</td>
+          <td class="cve-tag">CVE-2026-2229</td>
+          <td><span class="cvss-tag cvss-high">7.5</span></td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">undici@7.23.0</span> &mdash; WebSocket 64-bit Length Overflow</td>
+          <td class="cve-tag">CVE-2026-1528</td>
+          <td><span class="cvss-tag cvss-high">7.5</span></td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">undici@7.23.0</span> &mdash; Unbounded Memory in WebSocket</td>
+          <td class="cve-tag">CVE-2026-1526</td>
+          <td><span class="cvss-tag cvss-high">7.5</span></td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td class="sev-high">High</td>
+          <td><span class="pkg-name">node-forge@1.3.3</span> &mdash; Ed25519 Signature Forgery</td>
+          <td class="cve-tag">CVE-2026-33895</td>
+          <td><span class="cvss-tag cvss-high">7.5</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- AI Analyst Findings -->
+<div class="section" id="ai-findings">
+  <div class="section-title" style="color: var(--violet);">// What scanners missed</div>
+  <h2 style="margin-bottom: 8px;">AI Analyst Findings</h2>
+  <p style="color: var(--steel); font-size: 13px; margin-bottom: 32px;">8 AI security analysts examined the codebase for threats that traditional tools can't detect.</p>
+
+  <!-- Critical -->
+  <div style="margin-bottom: 32px;">
+    <div style="font-size: 12px; font-weight: 700; color: var(--threat-red); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px; padding-left: 4px;">Critical</div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--threat-red);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">IDOR: Missing Ownership Check on Resource Update/Delete</div>
+        <span class="ai-card-sev crit">Critical</span>
+      </div>
+      <div class="ai-card-file">packages/core/src/resources/handlers.ts:227-273</div>
+      <div class="ai-card-desc">Any authenticated user can overwrite or delete any other user's resources by knowing their resource ID. No ownership validation occurs before mutation operations.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 97%
+          <div class="confidence-fill"><span style="width: 97%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 5: App Pentester</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- High -->
+  <div style="margin-bottom: 32px;">
+    <div style="font-size: 12px; font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px; padding-left: 4px;">High</div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">GitHub Actions Shell Injection via workflow_dispatch</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">.github/workflows/desktop-release.yml:32,76,104</div>
+      <div class="ai-card-desc">User-controlled workflow_dispatch inputs are interpolated directly into shell commands. An attacker can inject shell commands to exfiltrate Apple signing certificates, npm tokens, and APPLE_ID credentials.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 95%
+          <div class="confidence-fill"><span style="width: 95%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 1</span>
+          <span class="analyst-tag">Analyst 2</span>
+          <span class="analyst-tag">Analyst 4</span>
+          <span class="analyst-tag">Analyst 5</span>
+          <span class="analyst-tag">Analyst 7</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">Path Traversal via startsWith() Prefix Bypass</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">templates/analytics/server/handlers/ai-instructions.ts:130,228</div>
+      <div class="ai-card-desc">Path validation uses <code style="color: var(--violet); background: var(--violet-dim); padding: 1px 6px; border-radius: 3px;">startsWith()</code> which can be bypassed. Allows reading arbitrary files on the server; admin users can write to arbitrary paths via <code style="color: var(--violet); background: var(--violet-dim); padding: 1px 6px; border-radius: 3px;">.builder/../../.env</code>.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 92%
+          <div class="confidence-fill"><span style="width: 92%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 2: Behaviorist</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">Stored XSS via Regex-Based HTML Sanitizer Bypass</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">templates/calendar/app/lib/sanitize-description.ts:2-9</div>
+      <div class="ai-card-desc">Custom regex sanitizer misses javascript: URIs, unquoted event handlers, and SVG-based XSS vectors. Attacker-controlled calendar descriptions execute arbitrary JavaScript in other users' browsers.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 88%
+          <div class="confidence-fill"><span style="width: 88%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 2: Behaviorist</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">Hardcoded High-Entropy API Key</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">templates/slides/scripts/fetch-logos.ts:2</div>
+      <div class="ai-card-desc">86-character credential hardcoded in source and exposed in git history. Grants access to external API services. Requires immediate rotation.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 99%
+          <div class="confidence-fill"><span style="width: 99%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 2</span>
+          <span class="analyst-tag">Analyst 3</span>
+          <span class="analyst-tag">Analyst 5</span>
+          <span class="analyst-tag">Analyst 7</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">Wildcard postMessage Exposes Credentials</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">packages/core/src/client/agent-chat.ts:67</div>
+      <div class="ai-card-desc">API keys, user prompts, and PII are broadcast via postMessage with wildcard origin ("*"), allowing any cross-origin iframe to intercept sensitive data.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 90%
+          <div class="confidence-fill"><span style="width: 90%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 2</span>
+          <span class="analyst-tag">Analyst 5</span>
+          <span class="analyst-tag">Analyst 6</span>
+          <span class="analyst-tag">Analyst 7</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">Hono Auth Bypass via IP Spoofing</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">hono@4.12.1 &mdash; GHSA-xh87-mx6m-69f3</div>
+      <div class="ai-card-desc">Hono framework trusts X-Forwarded-For header for IP-based authentication decisions. Attacker can spoof source IP to bypass access controls. CVSS 8.2.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 99%
+          <div class="confidence-fill"><span style="width: 99%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 2: Behaviorist</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">PTY Resize: Unvalidated Integers to C++ FFI</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">packages/core/src/terminal/pty-server.ts:280-281</div>
+      <div class="ai-card-desc">Terminal resize dimensions (cols/rows) are passed directly to a native C++ binding without validation. Floats, NaN, or Infinity values cause undefined behavior in the FFI layer.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 80%
+          <div class="confidence-fill"><span style="width: 80%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 6: Memory Exploiter</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">Undici WebSocket 64-bit Frame Length Overflow</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">packages/core/src/terminal/pty-server.ts:58 &middot; undici@7.23.0</div>
+      <div class="ai-card-desc">WebSocket frame parser in undici does not handle 64-bit length fields correctly. Malicious frame causes hard crash with no recovery path.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 90%
+          <div class="confidence-fill"><span style="width: 90%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 6: Memory Exploiter</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">Undici WebSocket Unbounded Heap Growth</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">packages/core/src/terminal/pty-server.ts:58 &middot; undici@7.23.0</div>
+      <div class="ai-card-desc">Compressed WebSocket frames are accumulated without memory limits, allowing a malicious peer to trigger out-of-memory conditions.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 88%
+          <div class="confidence-fill"><span style="width: 88%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 6: Memory Exploiter</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">User-Controlled RegExp: Server-Side ReDoS</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">templates/calendar/server/handlers/bookings.ts:124-128</div>
+      <div class="ai-card-desc"><code style="color: var(--violet); background: var(--violet-dim); padding: 1px 6px; border-radius: 3px;">new RegExp(field.pattern)</code> constructs a regex from user input with no complexity bound. Attacker-crafted patterns cause catastrophic backtracking, blocking the event loop.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 85%
+          <div class="confidence-fill"><span style="width: 85%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 6: Memory Exploiter</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">SQL Injection via ATTACH DATABASE Bypass</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">templates/analytics/server/handlers/sql-query.ts:25,35-45</div>
+      <div class="ai-card-desc">SQL query handler uses a DML blocklist that fails to account for ATTACH DATABASE, PRAGMA, and load_extension() statements. Attacker can escape the intended SQLite sandbox.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 82%
+          <div class="confidence-fill"><span style="width: 82%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 6: Memory Exploiter</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">node-forge Signature Forgery (3 CVEs)</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">node-forge@1.3.3</div>
+      <div class="ai-card-desc">Ed25519 signature forgery, RSA-PKCS#1 v1.5 signature forgery, and basicConstraints CA bypass. Three distinct CVEs allowing certificate chain manipulation and identity spoofing.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 88%
+          <div class="confidence-fill"><span style="width: 88%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 6: Memory Exploiter</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">Dynamic npx Package Execution at Runtime</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">packages/core/src/terminal/pty-server.ts:155-159</div>
+      <div class="ai-card-desc">Application downloads and executes npm packages via npx at runtime without integrity checks or version pinning. A compromised registry or typosquatted package leads to arbitrary code execution.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 75%
+          <div class="confidence-fill"><span style="width: 75%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 6: Memory Exploiter</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card" style="border-left: 3px solid var(--amber);">
+      <div class="ai-card-header">
+        <div class="ai-card-title">@anthropic-ai/sdk Memory Tool Sandbox Escape</div>
+        <span class="ai-card-sev high">High</span>
+      </div>
+      <div class="ai-card-file">@anthropic-ai/sdk@0.80.0 &middot; CVE-2026-34451</div>
+      <div class="ai-card-desc">Path validation in the SDK's memory tool uses prefix collision that can be bypassed to read/write files outside the intended sandbox directory.</div>
+      <div class="ai-card-meta">
+        <div class="confidence-bar">
+          Confidence: 99%
+          <div class="confidence-fill"><span style="width: 99%;"></span></div>
+        </div>
+        <div class="analyst-tags">
+          <span class="analyst-tag">Analyst 2</span>
+          <span class="analyst-tag">Analyst 3</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Medium (collapsible) -->
+  <details>
+    <summary>
+      <span class="sev-med">Medium</span> &mdash; 11 findings
+    </summary>
+    <div class="details-body">
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">OAuth CSRF via hardcoded fallback key</div>
+        <div class="ai-card-file">google-oauth.ts:52-54</div>
+        <div class="ai-card-meta"><span>Confidence: 90%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">Session token in URL query parameter</div>
+        <div class="ai-card-file">auth.ts:303-318</div>
+        <div class="ai-card-meta"><span>Confidence: 97%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">CORS wildcard on all API endpoints</div>
+        <div class="ai-card-file">create-server.ts:135-156</div>
+        <div class="ai-card-meta"><span>Confidence: 95%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">Rate limiting bypass via X-Forwarded-For</div>
+        <div class="ai-card-file">auth.ts:79-81</div>
+        <div class="ai-card-meta"><span>Confidence: 88%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">NODE_ENV=test disables all auth</div>
+        <div class="ai-card-file">auth.ts:244-283</div>
+        <div class="ai-card-meta"><span>Confidence: 92%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">postMessages accepted without origin validation</div>
+        <div class="ai-card-file">harness.ts:32-54</div>
+        <div class="ai-card-meta"><span>Confidence: 90%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">JWT decoded without signature verification</div>
+        <div class="ai-card-file">track-metric.ts:65-70</div>
+        <div class="ai-card-meta"><span>Confidence: 82%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">25 unique HIGH CVEs in dependencies</div>
+        <div class="ai-card-file">pnpm-lock.yaml</div>
+        <div class="ai-card-meta"><span>Confidence: 97%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">Unpinned GitHub Actions (tag-based)</div>
+        <div class="ai-card-file">publish.yml:31,37,43,48</div>
+        <div class="ai-card-meta"><span>Confidence: 90%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">Shell injection in publish.yml</div>
+        <div class="ai-card-file">publish.yml:71</div>
+        <div class="ai-card-meta"><span>Confidence: 75%</span></div>
+      </div>
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">dangerouslySetInnerHTML without sanitization</div>
+        <div class="ai-card-file">IssueDescription.tsx</div>
+        <div class="ai-card-meta"><span>Confidence: 65%</span></div>
+      </div>
+    </div>
+  </details>
+</div>
+
+<!-- Infrastructure & Trust Assessment -->
+<div class="section" id="trust">
+  <div class="section-title">// Infrastructure & Trust Assessment</div>
+  <h2>Repository health signals</h2>
+
+  <div class="trust-items">
+    <div class="trust-item">
+      <span class="trust-icon">!</span>
+      Single maintainer (bus factor = 1) &mdash; 100% commits from one person
+    </div>
+    <div class="trust-item">
+      <span class="trust-icon">!</span>
+      No SECURITY.md &mdash; no vulnerability disclosure process
+    </div>
+    <div class="trust-item">
+      <span class="trust-icon">!</span>
+      No release tags &mdash; no signed commits
+    </div>
+  </div>
+</div>
+
+<!-- Dependency Upgrade Table -->
+<div class="section" id="upgrades">
+  <div class="section-title">// Dependency Upgrades</div>
+  <h2>Remediation path</h2>
+
+  <div class="table-wrap">
+    <table class="upgrade-table">
+      <thead>
+        <tr>
+          <th>Package</th>
+          <th>Previous</th>
+          <th>Fixed</th>
+          <th>Severity</th>
+          <th>CVEs</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="pkg-name">rollup</td>
+          <td class="ver-old">4.46.2</td>
+          <td class="ver-new">4.59.0</td>
+          <td><span class="cvss-tag cvss-crit">Critical 9.8</span></td>
+          <td class="cve-tag">CVE-2026-27606</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">multer</td>
+          <td class="ver-old">2.0.2</td>
+          <td class="ver-new">2.1.1</td>
+          <td><span class="cvss-tag cvss-high">High 8.7</span></td>
+          <td class="cve-tag">CVE-2026-3520, CVE-2026-2359</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">minimatch</td>
+          <td class="ver-old">9.0.5</td>
+          <td class="ver-new">9.0.7</td>
+          <td><span class="cvss-tag cvss-high">High 8.7</span></td>
+          <td class="cve-tag">CVE-2026-26996, CVE-2026-27903, CVE-2026-27904</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">hono</td>
+          <td class="ver-old">4.12.1</td>
+          <td class="ver-new">4.12.4</td>
+          <td><span class="cvss-tag cvss-high">High 8.2</span></td>
+          <td class="cve-tag">GHSA-xh87-mx6m-69f3, GHSA-q5qw-h33p-qvwr</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">lodash</td>
+          <td class="ver-old">4.17.21</td>
+          <td class="ver-new">4.18.0</td>
+          <td><span class="cvss-tag cvss-high">High 8.1</span></td>
+          <td class="cve-tag">CVE-2026-4800</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">@remix-run/router</td>
+          <td class="ver-old">1.23.0</td>
+          <td class="ver-new">1.23.2</td>
+          <td><span class="cvss-tag cvss-high">High 8.0</span></td>
+          <td class="cve-tag">CVE-2026-22029</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">undici</td>
+          <td class="ver-old">7.23.0</td>
+          <td class="ver-new">7.24.0</td>
+          <td><span class="cvss-tag cvss-high">High 7.5</span></td>
+          <td class="cve-tag">CVE-2026-2229, CVE-2026-1528, CVE-2026-1526</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">node-forge</td>
+          <td class="ver-old">1.3.3</td>
+          <td class="ver-new">1.4.0</td>
+          <td><span class="cvss-tag cvss-high">High 7.5</span></td>
+          <td class="cve-tag">CVE-2026-33895, CVE-2026-33894</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">path-to-regexp</td>
+          <td class="ver-old">8.2.0 / 8.3.0</td>
+          <td class="ver-new">8.4.0</td>
+          <td><span class="cvss-tag cvss-high">High 7.5</span></td>
+          <td class="cve-tag">CVE-2026-4926</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">picomatch</td>
+          <td class="ver-old">2.3.1 / 3.0.1 / 4.0.3</td>
+          <td class="ver-new">4.0.4</td>
+          <td><span class="cvss-tag cvss-high">High 7.5</span></td>
+          <td class="cve-tag">CVE-2026-33671</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">fast-xml-parser</td>
+          <td class="ver-old">5.5.3</td>
+          <td class="ver-new">5.5.6</td>
+          <td><span class="cvss-tag cvss-high">High 7.5</span></td>
+          <td class="cve-tag">CVE-2026-33036</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">glob</td>
+          <td class="ver-old">10.4.5</td>
+          <td class="ver-new">10.5.0</td>
+          <td><span class="cvss-tag cvss-high">High 7.5</span></td>
+          <td class="cve-tag">CVE-2025-64756</td>
+        </tr>
+        <tr>
+          <td class="pkg-name">@anthropic-ai/sdk</td>
+          <td class="ver-old">0.80.0</td>
+          <td class="ver-new">0.81.0</td>
+          <td><span class="cvss-tag cvss-med">Medium 6.3</span></td>
+          <td class="cve-tag">CVE-2026-34451</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- What Was Fixed -->
+<div class="section" id="fixed">
+  <div class="section-title">// Remediation</div>
+  <h2>What was fixed</h2>
+
+  <div class="fix-card">
+    <h3>PR #127 &mdash; Security Remediation</h3>
+    <p>Based on this scan, Thresher generated a remediation PR that resolved <strong style="color: var(--threat-red);">2 Critical</strong>, <strong style="color: var(--amber);">28 High</strong>, and <strong>5 Medium</strong> findings &mdash; including 13 dependency upgrades, 12 application security fixes, 1 secret rotation, and 6 CI/CD hardening measures.</p>
+    <p><a href="https://github.com/BuilderIO/agent-native/pull/127" style="color: var(--safe-green); border-bottom: 1px solid var(--safe-green);">View PR #127 on GitHub &rarr;</a></p>
+
+    <div style="font-size: 12px; font-weight: 700; color: var(--steel); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">Application Security Fixes</div>
+    <ul class="fix-list">
+      <li>IDOR ownership check</li>
+      <li>Path traversal fix</li>
+      <li>XSS sanitizer rewrite</li>
+      <li>SQL injection hardening</li>
+      <li>OAuth CSRF fix</li>
+      <li>NODE_ENV auth bypass fix</li>
+      <li>ReDoS complexity limit</li>
+      <li>PTY input validation</li>
+      <li>Rate limiting fix</li>
+      <li>CORS origin whitelist</li>
+      <li>Session token moved to headers</li>
+      <li>postMessage origin validation</li>
+      <li>dangerouslySetInnerHTML sanitization</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Scan Pipeline Info -->
+<div class="section" id="pipeline">
+  <details>
+    <summary>Scan Pipeline Details</summary>
+    <div class="details-body">
+      <div style="margin-bottom: 24px;">
+        <div style="font-size: 12px; font-weight: 700; color: var(--steel); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">22 Scanners</div>
+        <div class="pipeline-grid">
+          <div class="pipeline-item">grype</div>
+          <div class="pipeline-item">trivy</div>
+          <div class="pipeline-item">osv-scanner</div>
+          <div class="pipeline-item">semgrep</div>
+          <div class="pipeline-item">gitleaks</div>
+          <div class="pipeline-item">checkov</div>
+          <div class="pipeline-item">bandit</div>
+          <div class="pipeline-item">clamav</div>
+          <div class="pipeline-item">guarddog</div>
+          <div class="pipeline-item">guarddog-deps</div>
+          <div class="pipeline-item">yara</div>
+          <div class="pipeline-item">entropy</div>
+          <div class="pipeline-item">install-hooks</div>
+          <div class="pipeline-item">semgrep-supply-chain</div>
+          <div class="pipeline-item">registry-meta</div>
+          <div class="pipeline-item">deps-dev</div>
+          <div class="pipeline-item">+ 6 others</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 24px;">
+        <div style="font-size: 12px; font-weight: 700; color: var(--violet); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">8 AI Analyst Personas</div>
+        <div class="pipeline-grid">
+          <div class="pipeline-item ai">The Paranoid</div>
+          <div class="pipeline-item ai">The Behaviorist</div>
+          <div class="pipeline-item ai">The Investigator</div>
+          <div class="pipeline-item ai">Vuln Pentester</div>
+          <div class="pipeline-item ai">App Pentester</div>
+          <div class="pipeline-item ai">Memory Exploiter</div>
+          <div class="pipeline-item ai">Infra Auditor</div>
+          <div class="pipeline-item ai">The Shadowcatcher</div>
+        </div>
+      </div>
+
+      <div style="font-size: 13px; color: var(--bone); line-height: 1.8;">
+        <p><strong style="color: var(--arctic);">Adversarial verification:</strong> An independent agent challenges all AI findings, filtering false positives and validating exploit paths.</p>
+        <p style="margin-top: 8px;"><strong style="color: var(--arctic);">Synthesis:</strong> Cross-track agreement analysis with priority elevation/downgrade logic. Scanner and AI findings are merged, deduplicated, and ranked by composite severity.</p>
+      </div>
+    </div>
+  </details>
+</div>
+
+</div><!-- end container -->
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="cta-ascii">                     _/|
+              ______/  |
+        _____/  __     |
+    ___/   \__/  \    /
+   /    _     \__/
+  | __-~ \--~
+   \/</div>
+
+  <h2>Run this on your own dependencies.</h2>
+
+  <div class="install-box" onclick="copyCmd(this)" style="margin: 0 auto;">
+    <span class="prompt">$</span>
+    <span class="cmd">brew tap thresher-sh/thresher && brew install <span class="domain">thresher</span></span>
+    <span class="copy-tooltip">copied!</span>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p style="margin-bottom: 16px;">
+    <a href="https://github.com/thresher-sh/thresher">GitHub</a> &middot;
+    <a href="https://github.com/thresher-sh/thresher/tree/main/documentation">Docs</a> &middot;
+    <a href="https://discord.gg/VVt9qmkcnr">Discord</a> &middot;
+    <a href="index.html">thresher.sh</a>
+  </p>
+  <p style="max-width: 680px; margin: 0 auto; color: var(--steel); font-size: 11px; line-height: 1.6;">
+    <strong>Disclaimer:</strong> Thresher is provided &ldquo;as is&rdquo; without warranty of any kind. It does not guarantee detection of all vulnerabilities, malicious code, or supply chain threats. Results should not be treated as a substitute for professional security audits. Use at your own risk.
+  </p>
+</footer>
+
+<script>
+function copyCmd(el) {
+  var cmd = 'brew tap thresher-sh/thresher && brew install thresher';
+  navigator.clipboard.writeText(cmd).then(function() {
+    var tip = el.querySelector('.copy-tooltip');
+    if (!tip) return;
+    tip.classList.add('show');
+    setTimeout(function() { tip.classList.remove('show'); }, 1500);
+  });
+}
+</script>
+
+</body>
+</html>

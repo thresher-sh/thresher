@@ -46,3 +46,33 @@ Shallow git clone breaks forensic abilities
 
 Figure out safe way to proxy git ssh token to access private repositories...
 Add in local git access
+
+
+---
+
+Website: report.html as scan output
+- Add styled report.html generation as an output of thresher scan
+- Self-contained single HTML file matching website aesthetic
+- Include scanner findings, AI analyst findings, adversarial results, synthesis
+- Can be opened locally or hosted
+- Based on the showcase report.html we're building for the website
+
+---
+
+Competitor feature gaps (from website research, April 2026):
+
+1. Reachability analysis (Semgrep claims 98% false positive reduction,
+   Endor Labs uses it for "95% fewer alerts") — determine if adversarial
+   verification achieves similar noise reduction, quantify it
+
+2. IDE integration (Semgrep has IDE + MCP server, Snyk has IDE plugins)
+   — consider VS Code extension or MCP server for thresher
+
+3. CI/CD integration (all competitors emphasize PR-level blocking)
+   — GitHub Action for thresher scan on PR
+
+4. Demo video (Snyk has embedded video on homepage)
+   — record a terminal screencast of a real scan
+
+5. ROI / metrics storytelling (Snyk leads with "288% ROI", "80% faster")
+   — quantify scan depth vs competitors (22 scanners vs typical 1-3)

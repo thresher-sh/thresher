@@ -504,8 +504,11 @@
   }
 
   /* ── Responsive ────────────────────────────── */
+  .workflow-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 48px; }
+
   @media (max-width: 768px) {
-    .features { grid-template-columns: 1fr; }
+    .features { grid-template-columns: 1fr !important; }
+    .workflow-grid { grid-template-columns: 1fr; }
     .analysts-grid { grid-template-columns: repeat(2, 1fr); }
     .zones-list { grid-template-columns: 1fr; }
     .hero-ascii { font-size: 9px; }
@@ -546,6 +549,7 @@
   <ul class="nav-links">
     <li><a href="#what">What</a></li>
     <li><a href="#features">Features</a></li>
+    <li><a href="#why">Why Thresher</a></li>
     <li><a href="#how-it-works">How It Works</a></li>
     <li><a href="#analysts">Analysts</a></li>
     <li><a href="#results">Results</a></li>
@@ -571,12 +575,18 @@
       ~</div>
 
   <h1><span class="prompt-mark">$</span><span class="fin-mark">_/|</span> thresher</h1>
-  <p class="tagline">Separate the safe from the dangerous.</p>
+  <p class="tagline">Know if an open source package is safe &mdash; before you install it.</p>
+  <p class="hero-sub" style="margin-top: 0; margin-bottom: 48px; font-size: 14px;">
+    22 scanners. 8 AI analysts. One command. Runs locally in a hardened VM.
+  </p>
 
-  <div class="install-box" onclick="copyCmd(this, 'brew tap thresher-sh/thresher && brew install thresher')">
-    <span class="prompt">$</span>
-    <span class="cmd">brew tap thresher-sh/thresher && brew install <span class="domain">thresher</span></span>
-    <span class="copy-tooltip">copied!</span>
+  <div style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap; justify-content: center; position: relative; z-index: 1;">
+    <div class="install-box" onclick="copyCmd(this, 'brew tap thresher-sh/thresher && brew install thresher')">
+      <span class="prompt">$</span>
+      <span class="cmd">brew tap thresher-sh/thresher && brew install <span class="domain">thresher</span></span>
+      <span class="copy-tooltip">copied!</span>
+    </div>
+    <a href="report.html" style="font-family: var(--mono); font-size: 14px; color: var(--violet); text-decoration: none; border: 1px solid var(--violet); border-radius: 8px; padding: 20px 32px; transition: background 0.2s, color 0.2s;">See a real scan report &rarr;</a>
   </div>
   <div class="install-hint">click to copy</div>
 
@@ -584,9 +594,20 @@
     Open source &middot; <a href="https://github.com/thresher-sh/thresher">View on GitHub</a>
   </p>
   <br /><br />
-  <p>
-    <div class="footer-shark" id="swim-line"></div>
-  </p>
+  <div class="footer-shark" id="swim-line"></div>
+</section>
+
+<!-- ── Urgency ──────────────────────────────────────────── -->
+<section style="max-width: 900px; margin: 0 auto; padding: 0 24px 80px; text-align: center;">
+  <div style="background: var(--terminal-black); border: 1px solid var(--charcoal); border-radius: 8px; padding: 32px 40px;">
+    <p style="font-family: var(--sans); font-size: 16px; color: var(--bone); line-height: 1.8; margin-bottom: 12px;">
+      Supply chain attacks grew <span style="color: var(--threat-red); font-weight: 700;">180%</span> since 2022. Open source packages get hijacked, abandoned, or backdoored every week. The average time from compromise to exploitation: <span style="color: var(--threat-red); font-weight: 700;">minutes, not months</span>.
+    </p>
+    <p style="font-family: var(--sans); font-size: 15px; color: var(--steel); line-height: 1.7;">
+      Most security tools scan your code and for known CVEs and call it done. 
+      <span style="color: var(--arctic); font-weight: 600;">Who&rsquo;s scanning the code your code for the things that are not known?</span>
+    </p>
+  </div>
 </section>
 
 <!-- ── What Is Thresher ─────────────────────────────────── -->
@@ -596,13 +617,10 @@
 
   <div style="max-width: 680px; margin: 0 auto 48px;">
     <p style="color: var(--bone); font-family: var(--sans); font-size: 16px; line-height: 1.8; margin-bottom: 24px;">
-      Modern software doesn't get built from scratch. It's assembled from thousands of open source packages — small pieces of code written by people all over the world. Your banking app, your medical records portal, your kid's school platform — they all depend on this invisible supply chain.
-    </p>
-    <p style="color: var(--bone); font-family: var(--sans); font-size: 16px; line-height: 1.8; margin-bottom: 24px;">
-      That's a problem. Because any one of those packages can be hijacked, abandoned, or written with hidden backdoors. When that happens, attackers don't break in through the front door — they come in through the building materials.
+      Modern software is assembled from thousands of open source packages &mdash; code written by strangers all over the world. Any one of those packages can be hijacked, abandoned, or built with hidden backdoors. When that happens, attackers don&rsquo;t break in through the front door &mdash; they come in through the building materials.
     </p>
     <p style="color: var(--violet); font-family: var(--sans); font-size: 16px; line-height: 1.8; font-weight: 600;">
-      Thresher is a free, open source tool that scans those building materials — every dependency, every layer — and tells you what's safe and what's not. One command, full picture.
+      Thresher is a free, open source tool that scans those building materials &mdash; every dependency, every layer &mdash; and tells you what&rsquo;s safe and what&rsquo;s not. One command, full picture.
     </p>
   </div>
 </section>
@@ -631,10 +649,62 @@
   </div>
 </section>
 
+<!-- ── Why Thresher ────────────────────────────────────── -->
+<section class="section" id="why">
+  <div class="section-title">// Why not just use Snyk?</div>
+  <h2>What other tools don&rsquo;t do.</h2>
+
+  <div style="max-width: 680px; margin: 0 auto 48px;">
+    <p style="color: var(--bone); font-family: var(--sans); font-size: 16px; line-height: 1.8; margin-bottom: 24px;">
+      Snyk, Semgrep, and Socket are great tools. They scan for known CVEs in your dependency tree. But known CVEs are the easy part.
+    </p>
+    <p style="color: var(--bone); font-family: var(--sans); font-size: 16px; line-height: 1.8; margin-bottom: 32px;">
+      What about the IDOR that lets any user delete another user&rsquo;s data? The path traversal hiding behind a <code style="color: var(--violet);">startsWith()</code> check? The hardcoded API key in a utility script? The SQL injection that bypasses the keyword blocklist via <code style="color: var(--violet);">ATTACH DATABASE</code>? These are real findings from a real Thresher scan &mdash; <a href="report.html" style="color: var(--violet); text-decoration: none; border-bottom: 1px solid var(--violet);">see the full report</a>.
+    </p>
+  </div>
+
+  <div class="features" style="grid-template-columns: repeat(2, 1fr);">
+    <div class="feature-card">
+      <div class="feature-label" style="color: var(--violet); margin-bottom: 12px;">Runs locally in a hardened VM</div>
+      <div class="feature-desc">Your code never leaves your machine. No SaaS dashboard, no account required. Everything runs inside an isolated Lima VM with zero sudo, network lockdown, and validated output boundaries.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-label" style="color: var(--violet); margin-bottom: 12px;">AI analysts reason about what scanners can&rsquo;t see</div>
+      <div class="feature-desc">8 specialized AI personas examine your code for malice, trust issues, attack surface, memory corruption, dark corners, and infrastructure risks. They find the bugs that CVE databases don&rsquo;t know about yet.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-label" style="color: var(--violet); margin-bottom: 12px;">Adversarial verification</div>
+      <div class="feature-desc">Every AI finding gets challenged by an independent adversarial agent before it reaches you. No hallucinated vulnerabilities. No noise. Just real findings that survive scrutiny.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-label" style="color: var(--violet); margin-bottom: 12px;">Open source, one command</div>
+      <div class="feature-desc">No vendor lock-in. No pricing tiers. No sales calls. <code style="color: var(--arctic);">brew install thresher</code> and point it at a repo. You get a full security assessment in minutes.</div>
+    </div>
+  </div>
+</section>
+
 <!-- ── How It Works ─────────────────────────────────────── -->
 <section class="section" id="how-it-works">
   <div class="section-title">// How it works</div>
   <h2>One command. Full assessment.</h2>
+
+  <div class="workflow-grid">
+    <div style="background: var(--terminal-black); border: 1px solid var(--charcoal); border-radius: 8px; padding: 28px 24px;">
+      <div style="font-size: 32px; font-weight: 700; color: var(--violet); margin-bottom: 8px;">1</div>
+      <div style="font-size: 14px; font-weight: 700; color: var(--arctic); margin-bottom: 8px;">Pick a package</div>
+      <div style="font-size: 13px; color: var(--steel); font-family: var(--mono);">thresher scan https://github.com/org/repo</div>
+    </div>
+    <div style="background: var(--terminal-black); border: 1px solid var(--charcoal); border-radius: 8px; padding: 28px 24px;">
+      <div style="font-size: 32px; font-weight: 700; color: var(--violet); margin-bottom: 8px;">2</div>
+      <div style="font-size: 14px; font-weight: 700; color: var(--arctic); margin-bottom: 8px;">Wait ~10 minutes</div>
+      <div style="font-size: 13px; color: var(--steel);">22 scanners + 8 AI analysts run in a sealed VM</div>
+    </div>
+    <div style="background: var(--terminal-black); border: 1px solid var(--charcoal); border-radius: 8px; padding: 28px 24px;">
+      <div style="font-size: 32px; font-weight: 700; color: var(--violet); margin-bottom: 8px;">3</div>
+      <div style="font-size: 14px; font-weight: 700; color: var(--arctic); margin-bottom: 8px;">Get a full report</div>
+      <div style="font-size: 13px; color: var(--steel);">Findings, severity, remediation guidance</div>
+    </div>
+  </div>
 
   <div class="terminal">
     <div class="terminal-bar">
@@ -843,12 +913,15 @@
   | __-~ \--~
    \/</div>
 
-  <h2>What's hiding in your dependencies?</h2>
+  <h2>What&rsquo;s hiding in your dependencies?</h2>
 
-  <div class="install-box" onclick="copyCmd(this, 'brew tap thresher-sh/thresher && brew install thresher')" style="margin: 0 auto;">
-    <span class="prompt">$</span>
-    <span class="cmd">brew tap thresher-sh/thresher && brew install <span class="domain">thresher</span></span>
-    <span class="copy-tooltip">copied!</span>
+  <div style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap; justify-content: center; position: relative; z-index: 1;">
+    <div class="install-box" onclick="copyCmd(this, 'brew tap thresher-sh/thresher && brew install thresher')">
+      <span class="prompt">$</span>
+      <span class="cmd">brew tap thresher-sh/thresher && brew install <span class="domain">thresher</span></span>
+      <span class="copy-tooltip">copied!</span>
+    </div>
+    <a href="report.html" style="font-family: var(--mono); font-size: 14px; color: var(--violet); text-decoration: none; border: 1px solid var(--violet); border-radius: 8px; padding: 20px 32px; transition: background 0.2s, color 0.2s; position: relative; z-index: 1;">See a real scan report &rarr;</a>
   </div>
 </section>
 
