@@ -19,7 +19,7 @@
 
 Supply chain security scanner. 22 deterministic scanners + 8 AI analyst personas inside a hardened, ephemeral VM. Produces a go/no-go report.
 
-> **WIP.** No guarantee to catch anything. Use at your own risk.
+> **Disclaimer:** Thresher is provided "as is" without warranty of any kind. It does not guarantee detection of all vulnerabilities, malicious code, or supply chain threats. Results should not be treated as a substitute for professional security audits. No vm isolation is guaranteed safe, Use at your own risk.
 
 ---
 
