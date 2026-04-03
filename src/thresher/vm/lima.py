@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -13,8 +14,29 @@ from thresher.vm.ssh import SSHError, ssh_copy_to, ssh_exec
 
 logger = logging.getLogger(__name__)
 
-# Path to the Lima VM template relative to the project root.
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+def _find_data_root() -> Path:
+    """Locate the project data root (lima/, vm_scripts/, rules/, docker/).
+
+    In a development install the source tree layout has these directories
+    three levels above this file.  In a Homebrew (or other pip-installed)
+    layout they live under ``sys.prefix/share/thresher/``.
+    """
+    # 1. Development / editable-install layout
+    dev_root = Path(__file__).resolve().parents[3]
+    if (dev_root / "lima" / "thresher.yaml").exists():
+        return dev_root
+
+    # 2. Installed layout (Homebrew virtualenv puts them in share/thresher/)
+    installed_root = Path(sys.prefix) / "share" / "thresher"
+    if (installed_root / "lima" / "thresher.yaml").exists():
+        return installed_root
+
+    # Fall back to dev root so existing error messages stay useful
+    return dev_root
+
+
+_PROJECT_ROOT = _find_data_root()
 _TEMPLATE_PATH = _PROJECT_ROOT / "lima" / "thresher.yaml"
 
 # Paths to provisioning scripts inside the project.
