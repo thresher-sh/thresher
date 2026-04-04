@@ -6,10 +6,27 @@ import logging
 import os
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from typing import Callable, NamedTuple
 
 logger = logging.getLogger(__name__)
+
+# Module-level semaphore to limit concurrent SSH sessions and avoid
+# SSH mux contention (ControlSocket collisions, session request failures).
+# Default of 8 is overridden by config.limits.max_concurrent_ssh when
+# load_config() is called.
+_ssh_semaphore = threading.Semaphore(8)
+
+
+def _init_ssh_semaphore(max_concurrent: int) -> None:
+    """Re-initialise the SSH semaphore with a new concurrency limit.
+
+    Called by load_config() after reading the limits table so the
+    configured value takes effect before any scans start.
+    """
+    global _ssh_semaphore
+    _ssh_semaphore = threading.Semaphore(max_concurrent)
 
 
 class SSHError(Exception):
@@ -56,83 +73,91 @@ def ssh_exec(
 
     cmd = ["limactl", "shell", vm_name, "bash", "-c", full_command]
 
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except FileNotFoundError as exc:
-        raise SSHError(
-            "limactl not found. Is Lima installed?"
-        ) from exc
-
-    stdout_lines: list[str] = []
-    stderr_lines: list[str] = []
-
-    # Maximum stdout we'll accumulate before killing the process.
-    # Prevents a compromised VM from exhausting host memory.
-    # Read from config if available, otherwise use default.
-    try:
-        from thresher.config import active_limits
-        max_stdout_bytes = active_limits.max_stdout_bytes
-    except ImportError:
-        max_stdout_bytes = 50 * 1024 * 1024  # 50 MB fallback
+    # Throttle concurrent SSH sessions to avoid mux contention
+    # (ControlSocket collisions, "session request failed" errors).
+    _ssh_semaphore.acquire()
+    logger.debug("SSH session acquired for: %s", command[:80])
 
     try:
-        import selectors
-        import time
-
-        sel = selectors.DefaultSelector()
-        sel.register(proc.stdout, selectors.EVENT_READ)
-        sel.register(proc.stderr, selectors.EVENT_READ)
-
-        stdout_size = 0
         try:
-            deadline = time.monotonic() + timeout
-            while sel.get_map():
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    proc.kill()
-                    proc.wait()
-                    raise SSHError(
-                        f"Command timed out after {timeout}s in VM '{vm_name}': {command}"
-                    )
-                events = sel.select(timeout=min(remaining, 1.0))
-                for key, _ in events:
-                    line = key.fileobj.readline()  # type: ignore[union-attr]
-                    if not line:
-                        sel.unregister(key.fileobj)
-                        continue
-                    stripped = line.rstrip("\n")
-                    if key.fileobj is proc.stdout:
-                        stdout_size += len(line)
-                        if stdout_size > max_stdout_bytes:
-                            proc.kill()
-                            proc.wait()
-                            raise SSHError(
-                                f"VM output exceeded {max_stdout_bytes} bytes, "
-                                f"killed process in '{vm_name}'"
-                            )
-                        stdout_lines.append(line)
-                        logger.info("  %s", stripped)
-                        if on_stdout:
-                            on_stdout(stripped)
-                    else:
-                        stderr_lines.append(line)
-                        logger.warning("  %s", stripped)
-        finally:
-            sel.close()
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise SSHError(
+                "limactl not found. Is Lima installed?"
+            ) from exc
 
-        proc.wait()
-        return SSHResult("".join(stdout_lines), "".join(stderr_lines), proc.returncode)
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        # Maximum stdout we'll accumulate before killing the process.
+        # Prevents a compromised VM from exhausting host memory.
+        # Read from config if available, otherwise use default.
+        try:
+            from thresher.config import active_limits
+            max_stdout_bytes = active_limits.max_stdout_bytes
+        except ImportError:
+            max_stdout_bytes = 50 * 1024 * 1024  # 50 MB fallback
+
+        try:
+            import selectors
+            import time
+
+            sel = selectors.DefaultSelector()
+            sel.register(proc.stdout, selectors.EVENT_READ)
+            sel.register(proc.stderr, selectors.EVENT_READ)
+
+            stdout_size = 0
+            try:
+                deadline = time.monotonic() + timeout
+                while sel.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        proc.kill()
+                        proc.wait()
+                        raise SSHError(
+                            f"Command timed out after {timeout}s in VM '{vm_name}': {command}"
+                        )
+                    events = sel.select(timeout=min(remaining, 1.0))
+                    for key, _ in events:
+                        line = key.fileobj.readline()  # type: ignore[union-attr]
+                        if not line:
+                            sel.unregister(key.fileobj)
+                            continue
+                        stripped = line.rstrip("\n")
+                        if key.fileobj is proc.stdout:
+                            stdout_size += len(line)
+                            if stdout_size > max_stdout_bytes:
+                                proc.kill()
+                                proc.wait()
+                                raise SSHError(
+                                    f"VM output exceeded {max_stdout_bytes} bytes, "
+                                    f"killed process in '{vm_name}'"
+                                )
+                            stdout_lines.append(line)
+                            logger.info("  %s", stripped)
+                            if on_stdout:
+                                on_stdout(stripped)
+                        else:
+                            stderr_lines.append(line)
+                            logger.warning("  %s", stripped)
+            finally:
+                sel.close()
+
+            proc.wait()
+            return SSHResult("".join(stdout_lines), "".join(stderr_lines), proc.returncode)
+        finally:
+            # Ensure pipes are closed to avoid ResourceWarnings
+            if proc.stdout:
+                proc.stdout.close()
+            if proc.stderr:
+                proc.stderr.close()
     finally:
-        # Ensure pipes are closed to avoid ResourceWarnings
-        if proc.stdout:
-            proc.stdout.close()
-        if proc.stderr:
-            proc.stderr.close()
+        _ssh_semaphore.release()
 
 
 def ssh_copy_to(vm_name: str, local_path: str, remote_path: str) -> None:
