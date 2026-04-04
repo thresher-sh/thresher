@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -27,6 +28,34 @@ def _init_ssh_semaphore(max_concurrent: int) -> None:
     """
     global _ssh_semaphore
     _ssh_semaphore = threading.Semaphore(max_concurrent)
+
+
+# Patterns for credential redaction in log output
+_CREDENTIAL_PATTERNS = [
+    # Anthropic OAuth tokens
+    (re.compile(r"sk-ant-oat01-[A-Za-z0-9_-]+"), "sk-ant-oat01-****"),
+    # Anthropic API keys
+    (re.compile(r"sk-ant-api[A-Za-z0-9_-]+"), "sk-ant-api****"),
+]
+
+# Pattern for printf payloads writing to tmpfs credentials
+_PRINTF_TMPFS_PATTERN = re.compile(
+    r"(printf\s+'%s'\s+)'[^']*'(\s*>\s*/dev/shm/)"
+)
+
+
+def _redact_credentials(text: str) -> str:
+    """Mask API tokens and tmpfs credential payloads in log output.
+
+    This is applied to logged representations only — never to the
+    actual command passed to subprocess.
+    """
+    # Redact printf payloads targeting /dev/shm/
+    text = _PRINTF_TMPFS_PATTERN.sub(r"\1'[REDACTED]'\2", text)
+    # Redact known credential patterns
+    for pattern, replacement in _CREDENTIAL_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 class SSHError(Exception):
@@ -68,7 +97,7 @@ def ssh_exec(
         full_command = command
 
     # Log a short label (first 80 chars of the command, no secrets)
-    label = command[:80]
+    label = _redact_credentials(command[:80])
     logger.info("vm:%s> %s", vm_name, label)
 
     cmd = ["limactl", "shell", vm_name, "bash", "-c", full_command]
@@ -139,12 +168,12 @@ def ssh_exec(
                                     f"killed process in '{vm_name}'"
                                 )
                             stdout_lines.append(line)
-                            logger.info("  %s", stripped)
+                            logger.info("  %s", _redact_credentials(stripped))
                             if on_stdout:
-                                on_stdout(stripped)
+                                on_stdout(_redact_credentials(stripped))
                         else:
                             stderr_lines.append(line)
-                            logger.warning("  %s", stripped)
+                            logger.warning("  %s", _redact_credentials(stripped))
             finally:
                 sel.close()
 
