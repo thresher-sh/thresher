@@ -228,8 +228,59 @@ def _extract_result_from_stream(raw_output: str) -> str:
     return raw_output
 
 
+def _normalize_adversarial_schema(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Normalize analyst-forced schema to the expected adversarial schema.
+
+    If the adversarial agent was forced by the analyst stop hook to output
+    the analyst schema (with ``findings`` instead of ``results``), map it
+    to the expected adversarial schema so downstream code works correctly.
+    """
+    # Already has "results" key — nothing to remap
+    if "results" in parsed:
+        return parsed
+
+    # Check for analyst-forced schema: has "findings" with verdict fields
+    findings = parsed.get("findings", [])
+    if not isinstance(findings, list):
+        return parsed
+
+    # Only remap if findings items look like adversarial verdicts (have "verdict")
+    has_verdicts = any(
+        isinstance(f, dict) and "verdict" in f for f in findings
+    )
+    if not has_verdicts:
+        return parsed
+
+    logger.info(
+        "Remapping analyst-forced schema to adversarial schema "
+        "(%d findings with verdicts)", len(findings),
+    )
+
+    confirmed = sum(
+        1 for f in findings
+        if isinstance(f, dict) and f.get("verdict") == "confirmed"
+    )
+    downgraded = sum(
+        1 for f in findings
+        if isinstance(f, dict) and f.get("verdict") == "downgraded"
+    )
+
+    return {
+        "results": findings,
+        "verification_summary": parsed.get("summary", parsed.get("project_summary", "")),
+        "total_reviewed": len(findings),
+        "confirmed_count": confirmed,
+        "downgraded_count": downgraded,
+    }
+
+
 def _parse_adversarial_output(raw_output: str) -> dict[str, Any]:
-    """Parse JSON from the adversarial agent output."""
+    """Parse JSON from the adversarial agent output.
+
+    Handles both the native adversarial schema (``results``) and the
+    analyst-forced schema (``findings`` with verdict fields), normalizing
+    the latter to the expected adversarial format.
+    """
     if not raw_output or not raw_output.strip():
         logger.warning("Empty output from adversarial agent")
         return {"results": [], "error": "Agent returned empty output"}
@@ -242,15 +293,13 @@ def _parse_adversarial_output(raw_output: str) -> dict[str, Any]:
             inner = parsed["result"]
             if isinstance(inner, str):
                 try:
-                    return json.loads(inner)
+                    return _normalize_adversarial_schema(json.loads(inner))
                 except json.JSONDecodeError:
                     pass
             elif isinstance(inner, dict):
-                return inner
-        if isinstance(parsed, dict) and "results" in parsed:
-            return parsed
+                return _normalize_adversarial_schema(inner)
         if isinstance(parsed, dict):
-            return parsed
+            return _normalize_adversarial_schema(parsed)
     except json.JSONDecodeError:
         pass
 
@@ -262,7 +311,7 @@ def _parse_adversarial_output(raw_output: str) -> dict[str, Any]:
         try:
             parsed = json.loads(json_block.group(1))
             if isinstance(parsed, dict):
-                return parsed
+                return _normalize_adversarial_schema(parsed)
         except json.JSONDecodeError:
             pass
 
@@ -279,11 +328,11 @@ def _parse_adversarial_output(raw_output: str) -> dict[str, Any]:
                     try:
                         parsed = json.loads(candidate)
                         if isinstance(parsed, dict):
-                            return parsed
+                            return _normalize_adversarial_schema(parsed)
                     except json.JSONDecodeError:
                         break
 
-    logger.warning("Could not parse adversarial output")
+    logger.warning("Could not parse adversarial output. Raw (first 500 chars): %s", text[:500])
     return {"results": [], "error": f"Parse failed. Raw: {text[:500]}"}
 
 
@@ -296,7 +345,19 @@ def _merge_adversarial_results(
 
     results = verification.get("results", [])
     if not isinstance(results, list):
+        if verification:
+            logger.warning(
+                "Adversarial output has unexpected schema. Keys: %s",
+                list(verification.keys()),
+            )
         return updated_findings
+
+    total_reviewed = verification.get("total_reviewed", 0)
+    if total_reviewed == 0 and verification:
+        logger.warning(
+            "Adversarial output has unexpected schema. Keys: %s",
+            list(verification.keys()),
+        )
 
     results_by_path: dict[str, dict[str, Any]] = {}
     for result in results:
@@ -458,6 +519,29 @@ def run_adversarial_verification(
             "Failed to write adversarial prompt file to VM", exc_info=True
         )
         return
+
+    # Set up the stop hook to validate output schema before the agent
+    # is allowed to finish. Uses the adversarial-specific schema validator.
+    hook_settings = json.dumps({
+        "hooks": {
+            "Stop": [{
+                "hooks": [{
+                    "type": "command",
+                    "command": "/opt/thresher/bin/validate_adversarial_output.sh",
+                    "timeout": 30,
+                }]
+            }]
+        }
+    })
+    try:
+        ssh_exec(vm_name, f"mkdir -p {TARGET_DIR}/.claude")
+        ssh_write_file(
+            vm_name, hook_settings,
+            f"{TARGET_DIR}/.claude/settings.local.json",
+        )
+    except Exception:
+        logger.warning("Failed to write adversarial stop hook settings", exc_info=True)
+        # Continue without the hook — output parsing will still handle both schemas
 
     model = config.model
     max_turns = config.adversarial_max_turns or 20

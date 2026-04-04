@@ -82,6 +82,26 @@ class TestParsePredepOutput:
         result = _parse_predep_output("")
         assert result["hidden_dependencies"] == []
 
+    def test_malformed_json_returns_empty(self):
+        result = _parse_predep_output('{"hidden_dependencies": [INVALID]}')
+        assert result["hidden_dependencies"] == []
+
+    def test_wrong_schema_returns_empty(self):
+        """JSON without hidden_dependencies key is not accepted."""
+        result = _parse_predep_output('{"findings": [{"foo": "bar"}]}')
+        assert result["hidden_dependencies"] == []
+
+    def test_truncated_json_returns_empty(self):
+        result = _parse_predep_output('{"hidden_dependencies": [{"type": "git"')
+        assert result["hidden_dependencies"] == []
+
+    def test_logs_raw_output_on_failure(self, caplog):
+        """When parsing fails, the raw output should be logged for diagnosis."""
+        import logging
+        with caplog.at_level(logging.WARNING):
+            _parse_predep_output("agent said something unhelpful")
+        assert "agent said something unhelpful" in caplog.text
+
 
 class TestEmptyResult:
     def test_structure(self):
@@ -130,6 +150,41 @@ class TestRunPredepDiscovery:
         result = run_predep_discovery("test-vm", config)
         assert result["hidden_dependencies"] == []
         assert "failed" in result["summary"].lower()
+
+    @patch("thresher.agents.predep.ssh_write_file")
+    @patch("thresher.agents.predep.ssh_exec")
+    def test_fallback_reads_output_from_vm(self, mock_exec, mock_write, config):
+        """If parsing fails, check if agent wrote output directly to VM path."""
+        fallback_json = '{"hidden_dependencies": [{"type": "git", "source": "https://example.com/repo.git", "found_in": "Makefile:1", "context": "clone", "confidence": "high", "risk": "low"}], "files_scanned": 5, "summary": "found 1"}'
+        mock_exec.side_effect = [
+            SSHResult("", "", 0),  # mkdir .claude
+            SSHResult("", "", 0),  # tmpfs key write
+            SSHResult("garbled output not json", "", 0),  # claude invocation
+            SSHResult(fallback_json, "", 0),  # cat fallback path
+            SSHResult("", "", 0),  # mkdir for output dir
+        ]
+        mock_write.return_value = None
+
+        result = run_predep_discovery("test-vm", config)
+        assert len(result["hidden_dependencies"]) == 1
+        assert result["hidden_dependencies"][0]["type"] == "git"
+
+    @patch("thresher.agents.predep.ssh_write_file")
+    @patch("thresher.agents.predep.ssh_exec")
+    def test_fallback_skipped_when_parsing_succeeds(self, mock_exec, mock_write, config):
+        """When normal parsing succeeds, no fallback read should happen."""
+        mock_exec.side_effect = [
+            SSHResult("", "", 0),  # mkdir .claude
+            SSHResult("", "", 0),  # tmpfs key write
+            SSHResult(SAMPLE_OUTPUT, "", 0),  # claude invocation
+            SSHResult("", "", 0),  # mkdir for output dir
+        ]
+        mock_write.return_value = None
+
+        result = run_predep_discovery("test-vm", config)
+        assert len(result["hidden_dependencies"]) == 2
+        # Only 4 ssh_exec calls — no fallback cat
+        assert mock_exec.call_count == 4
 
     @patch("thresher.agents.predep.ssh_write_file")
     @patch("thresher.agents.predep.ssh_exec")
