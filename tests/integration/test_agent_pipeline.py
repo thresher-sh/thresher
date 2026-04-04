@@ -153,6 +153,7 @@ class TestAdversarialWithMultipleAnalysts:
             SSHResult(file_list, "", 0),              # ls analyst files
             SSHResult(paranoid_output, "", 0),         # cat paranoid
             SSHResult(behaviorist_output, "", 0),      # cat behaviorist
+            SSHResult("", "", 0),                      # mkdir .claude for stop hook
             SSHResult("", "", 0),                      # write API key
             SSHResult(                                 # claude adversarial
                 _load_agent_fixture("adversarial.json"), "", 0
@@ -179,6 +180,7 @@ class TestAdversarialWithMultipleAnalysts:
         mock_exec.side_effect = [
             SSHResult("", "", 1),                      # ls finds nothing
             SSHResult(analyst_findings, "", 0),         # cat legacy file
+            SSHResult("", "", 0),                      # mkdir .claude for stop hook
             SSHResult("", "", 0),                      # write API key
             SSHResult(                                 # claude adversarial
                 _load_agent_fixture("adversarial.json"), "", 0
@@ -211,6 +213,7 @@ class TestAdversarialWithMultipleAnalysts:
         mock_exec.side_effect = [
             SSHResult(file_list, "", 0),
             SSHResult(paranoid_output, "", 0),
+            SSHResult("", "", 0),  # mkdir .claude for stop hook
             SSHResult("", "", 0),  # write API key
             SSHResult(_load_agent_fixture("adversarial.json"), "", 0),
         ]
@@ -247,6 +250,7 @@ class TestAdversarialPipeline:
         mock_exec.side_effect = [
             SSHResult("", "", 1),                      # ls finds nothing
             SSHResult(analyst_findings, "", 0),         # cat legacy
+            SSHResult("", "", 0),                      # mkdir .claude for stop hook
             SSHResult("", "", 0),                      # write API key to tmpfs
             SSHResult(_load_agent_fixture("adversarial.json"), "", 0),
         ]
@@ -290,6 +294,7 @@ class TestAdversarialPipeline:
         mock_exec.side_effect = [
             SSHResult("", "", 1),                      # ls finds nothing
             SSHResult(analyst_findings, "", 0),         # cat legacy
+            SSHResult("", "", 0),                      # mkdir .claude for stop hook
             SSHResult("", "", 0),                      # write API key to tmpfs
             SSHResult(_load_agent_fixture("adversarial.json"), "", 0),
         ]
@@ -315,6 +320,7 @@ class TestAdversarialPipeline:
         mock_exec.side_effect = [
             SSHResult("", "", 1),                      # ls finds nothing
             SSHResult(analyst_findings, "", 0),         # cat legacy
+            SSHResult("", "", 0),                      # mkdir .claude for stop hook
             SSHResult("", "", 0),                      # write API key to tmpfs
             SSHResult(_load_agent_fixture("adversarial.json"), "", 0),
         ]

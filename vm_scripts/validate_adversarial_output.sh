@@ -1,7 +1,7 @@
 #!/bin/sh
-# validate_predep_output.sh — Claude Code stop hook for the predep agent.
+# validate_adversarial_output.sh — Claude Code stop hook for the adversarial agent.
 # Validates that the agent's response contains valid JSON matching the
-# expected hidden_dependencies schema. If invalid, blocks the stop so
+# expected adversarial verification schema. If invalid, blocks the stop so
 # the agent continues refining its output.
 #
 # Input: JSON on stdin with fields:
@@ -28,7 +28,7 @@ if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
 fi
 
 # Retry tracking — after 3 failed attempts, accept whatever the agent produced
-ATTEMPT_FILE="/tmp/.predep_hook_attempts"
+ATTEMPT_FILE="/tmp/.adversarial_hook_attempts"
 ATTEMPTS=0
 if [ -f "$ATTEMPT_FILE" ]; then
     ATTEMPTS=$(cat "$ATTEMPT_FILE" 2>/dev/null || echo "0")
@@ -37,7 +37,7 @@ ATTEMPTS=$((ATTEMPTS + 1))
 echo "$ATTEMPTS" > "$ATTEMPT_FILE"
 
 if [ "$ATTEMPTS" -ge 3 ]; then
-    echo "WARNING: predep stop hook has rejected output $ATTEMPTS times; accepting to avoid infinite loop" >&2
+    echo "WARNING: adversarial stop hook has rejected output $ATTEMPTS times; accepting to avoid infinite loop" >&2
     rm -f "$ATTEMPT_FILE"
     exit 0
 fi
@@ -61,10 +61,6 @@ import json, sys, re
 response = '''$RESPONSE'''
 
 # Try to extract JSON from the response
-# Strategy 1: direct JSON parse
-# Strategy 2: extract from code block
-# Strategy 3: find JSON object with expected key
-
 parsed = None
 
 # Try direct parse
@@ -100,9 +96,9 @@ if parsed is None:
                             pass
                     elif isinstance(inner, dict):
                         parsed = inner
-                if parsed and 'hidden_dependencies' in parsed:
+                if parsed and 'results' in parsed:
                     break
-                if 'hidden_dependencies' in obj:
+                if 'results' in obj:
                     parsed = obj
                     break
         except:
@@ -131,29 +127,29 @@ if parsed is None:
 elif not isinstance(parsed, dict):
     errors.append('Response JSON is not an object')
 else:
-    if 'hidden_dependencies' not in parsed:
-        errors.append('Missing required field: hidden_dependencies')
-    elif not isinstance(parsed['hidden_dependencies'], list):
-        errors.append('hidden_dependencies must be an array')
-    else:
-        for i, dep in enumerate(parsed['hidden_dependencies']):
-            if not isinstance(dep, dict):
-                errors.append(f'hidden_dependencies[{i}] is not an object')
-                continue
-            for field in ('type', 'source', 'found_in', 'confidence', 'risk'):
-                if field not in dep:
-                    errors.append(f'hidden_dependencies[{i}] missing field: {field}')
-            if dep.get('type') not in ('git', 'npm', 'pypi', 'cargo', 'go', 'url', 'docker', 'submodule'):
-                errors.append(f'hidden_dependencies[{i}] invalid type: {dep.get(\"type\")}')
-            if dep.get('confidence') not in ('high', 'medium', 'low'):
-                errors.append(f'hidden_dependencies[{i}] invalid confidence: {dep.get(\"confidence\")}')
-            if dep.get('risk') not in ('high', 'medium', 'low'):
-                errors.append(f'hidden_dependencies[{i}] invalid risk: {dep.get(\"risk\")}')
+    if 'verification_summary' not in parsed:
+        errors.append('Missing required field: verification_summary')
 
-    if 'files_scanned' not in parsed:
-        errors.append('Missing required field: files_scanned')
-    if 'summary' not in parsed:
-        errors.append('Missing required field: summary')
+    if 'total_reviewed' not in parsed:
+        errors.append('Missing required field: total_reviewed')
+    elif not isinstance(parsed['total_reviewed'], (int, float)):
+        errors.append('total_reviewed must be a number')
+
+    if 'results' not in parsed:
+        errors.append('Missing required field: results')
+    elif not isinstance(parsed['results'], list):
+        errors.append('results must be an array')
+    else:
+        for i, r in enumerate(parsed['results']):
+            if not isinstance(r, dict):
+                errors.append(f'results[{i}] is not an object')
+                continue
+            for field in ('file_path', 'verdict', 'reasoning'):
+                if field not in r:
+                    errors.append(f'results[{i}] missing field: {field}')
+            verdict = r.get('verdict', '')
+            if verdict not in ('confirmed', 'downgraded'):
+                errors.append(f'results[{i}] verdict must be \"confirmed\" or \"downgraded\", got: {verdict}')
 
 if errors:
     print('Output validation failed:', file=sys.stderr)
@@ -161,11 +157,11 @@ if errors:
         print(f'  - {e}', file=sys.stderr)
     print('', file=sys.stderr)
     print('Fix your output to match the required schema. Ensure:', file=sys.stderr)
-    print('  - hidden_dependencies is an array of objects', file=sys.stderr)
-    print('  - Each object has: type, source, found_in, confidence, risk', file=sys.stderr)
-    print('  - type is one of: git, npm, pypi, cargo, go, url, docker, submodule', file=sys.stderr)
-    print('  - confidence and risk are: high, medium, or low', file=sys.stderr)
-    print('  - Top-level has: files_scanned (number) and summary (string)', file=sys.stderr)
+    print('  - verification_summary is a string', file=sys.stderr)
+    print('  - total_reviewed is a number', file=sys.stderr)
+    print('  - results is an array of objects', file=sys.stderr)
+    print('  - Each result has: file_path, verdict, reasoning', file=sys.stderr)
+    print('  - verdict is \"confirmed\" or \"downgraded\"', file=sys.stderr)
     sys.exit(2)
 
 sys.exit(0)

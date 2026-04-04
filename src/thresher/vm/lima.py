@@ -268,6 +268,11 @@ def provision_vm(vm_name: str, config: ScanConfig) -> None:
         ssh_copy_to(vm_name, str(analyst_validate_script), "/opt/thresher/bin/validate_analyst_output.sh")
         ssh_exec(vm_name, "sudo chmod +x /opt/thresher/bin/validate_analyst_output.sh")
 
+    adversarial_validate_script = _VM_SCRIPTS_DIR / "validate_adversarial_output.sh"
+    if adversarial_validate_script.exists():
+        ssh_copy_to(vm_name, str(adversarial_validate_script), "/opt/thresher/bin/validate_adversarial_output.sh")
+        ssh_exec(vm_name, "sudo chmod +x /opt/thresher/bin/validate_adversarial_output.sh")
+
     # Copy scanner-deps Docker build context (Dockerfile + scripts)
     docker_dir = _PROJECT_ROOT / "docker"
     if docker_dir.exists():
