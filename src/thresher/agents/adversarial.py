@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from collections import defaultdict
 from typing import Any
 
 from thresher.agents.prompts import ADVERSARIAL_SYSTEM_PROMPT
@@ -129,6 +131,50 @@ def _extract_high_risk(ai_findings: dict[str, Any]) -> list[dict[str, Any]]:
     return high_risk
 
 
+def _normalize_title(title: str) -> str:
+    """Normalize a finding title for dedup grouping: lowercase, collapse whitespace."""
+    return re.sub(r"\s+", " ", title.lower().strip())
+
+
+def _deduplicate_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Deduplicate findings by (file_path, normalized title).
+
+    For each group of duplicates, keeps the finding with the highest
+    risk_score (ties broken by confidence). Annotates each kept finding
+    with ``duplicate_count`` and ``source_analysts``.
+
+    Returns a new list; does not mutate the input.
+    """
+    if not findings:
+        return []
+
+    # Group by (file_path, title_normalized)
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for finding in findings:
+        key = (
+            finding.get("file_path", "N/A"),
+            _normalize_title(finding.get("title", "")),
+        )
+        groups[key].append(finding)
+
+    deduped: list[dict[str, Any]] = []
+    for _key, group in groups.items():
+        # Sort by risk_score desc, then confidence desc (from source_analyst finding)
+        best = max(
+            group,
+            key=lambda f: (f.get("risk_score", 0), f.get("confidence", 0)),
+        )
+        # Shallow copy to avoid mutating the original dict's top-level keys
+        kept = dict(best)
+        kept["duplicate_count"] = len(group)
+        kept["source_analysts"] = sorted(
+            {f.get("source_analyst", "unknown") for f in group}
+        )
+        deduped.append(kept)
+
+    return deduped
+
+
 def _format_findings_for_prompt(findings: list[dict[str, Any]]) -> str:
     """Format high-risk findings as text for the adversarial prompt."""
     lines: list[str] = []
@@ -154,6 +200,15 @@ def _format_findings_for_prompt(findings: list[dict[str, Any]]) -> str:
         reasoning = finding.get("reasoning", "")
         if reasoning:
             lines.append(f"- **Researcher Reasoning**: {reasoning}")
+
+        dup_count = finding.get("duplicate_count", 1)
+        source_analysts = finding.get("source_analysts", [])
+        if dup_count > 1 and source_analysts:
+            lines.append(
+                f"- **Independent reports**: This finding was independently "
+                f"reported by {dup_count} analysts "
+                f"({', '.join(source_analysts)}), increasing confidence."
+            )
 
         lines.append("")
 
@@ -255,8 +310,6 @@ def _parse_adversarial_output(raw_output: str) -> dict[str, Any]:
         pass
 
     # Try code block extraction
-    import re
-
     json_block = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
     if json_block:
         try:
@@ -427,6 +480,19 @@ def run_adversarial_verification(
     """
     ai_findings = _read_analyst_findings_from_vm(vm_name)
     high_risk = _extract_high_risk(ai_findings)
+
+    # Deduplicate before adversarial review to avoid re-verifying the same
+    # finding reported by multiple analysts.
+    original_count = len(high_risk)
+    high_risk = _deduplicate_findings(high_risk)
+    deduped_count = len(high_risk)
+    if original_count != deduped_count:
+        logger.info(
+            "Deduplicated %d findings to %d unique (%d duplicates removed)",
+            original_count,
+            deduped_count,
+            original_count - deduped_count,
+        )
 
     if not high_risk:
         logger.info("No high-risk findings to verify — skipping adversarial agent")

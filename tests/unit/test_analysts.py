@@ -8,9 +8,11 @@ from unittest.mock import patch, call, MagicMock
 from thresher.agents.analysts import (
     ANALYST_DEFINITIONS,
     _build_analyst_prompt,
+    _count_turns_from_stream,
     _empty_findings,
     _extract_result_from_stream,
     _format_analyst_markdown,
+    _log_timing_summary,
     _parse_analyst_json_output,
     _run_single_analyst,
     _validate_analyst_schema,
@@ -364,13 +366,15 @@ class TestRunSingleAnalyst:
 
     @patch("thresher.agents.analysts.ssh_write_file")
     @patch("thresher.agents.analysts.ssh_exec")
-    def test_returns_none(self, mock_exec, mock_write):
+    def test_returns_timing_dict(self, mock_exec, mock_write):
         mock_exec.return_value = SSHResult(self._valid_output(), "", 0)
         mock_write.return_value = None
 
         analyst = ANALYST_DEFINITIONS[0]
         result = _run_single_analyst("vm", _make_config(), analyst)
-        assert result is None
+        assert result is not None
+        assert result["name"] == "paranoid"
+        assert isinstance(result["duration"], float)
 
     @patch("thresher.agents.analysts.ssh_write_file")
     @patch("thresher.agents.analysts.ssh_exec")
@@ -514,3 +518,143 @@ class TestRunAllAnalysts:
         # Should not raise
         run_all_analysts("vm", _make_config())
         assert call_count == 8
+
+
+class TestCountTurnsFromStream:
+    def test_counts_assistant_messages(self):
+        stream = (
+            '{"type":"system","subtype":"init"}\n'
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"turn 1"}]}}\n'
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"turn 2"}]}}\n'
+            '{"type":"result","result":"done"}\n'
+        )
+        assert _count_turns_from_stream(stream) == 2
+
+    def test_empty_stream(self):
+        assert _count_turns_from_stream("") == 0
+
+    def test_no_assistant_messages(self):
+        stream = '{"type":"system","subtype":"init"}\n{"type":"result","result":"done"}\n'
+        assert _count_turns_from_stream(stream) == 0
+
+    def test_ignores_invalid_json(self):
+        stream = (
+            'not json\n'
+            '{"type":"assistant","message":{"content":[]}}\n'
+            'also not json\n'
+        )
+        assert _count_turns_from_stream(stream) == 1
+
+
+class TestRunSingleAnalystTiming:
+    def _valid_stream_output(self):
+        findings = json.dumps({
+            "analyst": "paranoid",
+            "findings": [],
+            "summary": "All clear",
+            "risk_score": 0,
+        })
+        return (
+            '{"type":"system","subtype":"init"}\n'
+            f'{{"type":"assistant","message":{{"content":[{{"type":"text","text":{json.dumps(findings)}}}]}}}}\n'
+            f'{{"type":"result","result":{json.dumps(findings)}}}\n'
+        )
+
+    @patch("thresher.agents.analysts.ssh_write_file")
+    @patch("thresher.agents.analysts.ssh_exec")
+    def test_returns_timing_metadata(self, mock_exec, mock_write):
+        mock_exec.return_value = SSHResult(self._valid_stream_output(), "", 0)
+        mock_write.return_value = None
+
+        analyst = ANALYST_DEFINITIONS[0]
+        result = _run_single_analyst("vm", _make_config(), analyst)
+
+        assert result is not None
+        assert result["name"] == "paranoid"
+        assert isinstance(result["duration"], float)
+        assert result["duration"] >= 0
+        assert result["turns"] == 1
+
+    @patch("thresher.agents.analysts.ssh_write_file")
+    @patch("thresher.agents.analysts.ssh_exec")
+    def test_returns_none_on_ssh_failure(self, mock_exec, mock_write):
+        mock_write.return_value = None
+
+        def ssh_side_effect(vm, cmd, **kwargs):
+            # Credential writes succeed; the claude invocation fails
+            if "claude -p" in cmd:
+                raise RuntimeError("SSH died")
+            return SSHResult("", "", 0)
+
+        mock_exec.side_effect = ssh_side_effect
+
+        analyst = ANALYST_DEFINITIONS[0]
+        result = _run_single_analyst("vm", _make_config(), analyst)
+        assert result is None
+
+    @patch("thresher.agents.analysts.ssh_write_file")
+    @patch("thresher.agents.analysts.ssh_exec")
+    def test_returns_none_on_prompt_write_failure(self, mock_exec, mock_write):
+        mock_write.side_effect = RuntimeError("write failed")
+
+        analyst = ANALYST_DEFINITIONS[0]
+        result = _run_single_analyst("vm", _make_config(), analyst)
+        assert result is None
+
+
+class TestLogTimingSummary:
+    def test_logs_summary_table(self, caplog):
+        import logging
+        timings = [
+            {"name": "paranoid", "duration": 301.2, "turns": 10},
+            {"name": "behaviorist", "duration": 572.4, "turns": 15},
+            {"name": "netwatch", "duration": 200.0, "turns": 8},
+        ]
+        with caplog.at_level(logging.INFO, logger="thresher.agents.analysts"):
+            _log_timing_summary(timings)
+
+        assert "Analyst timing summary:" in caplog.text
+        assert "paranoid" in caplog.text
+        assert "behaviorist" in caplog.text
+        assert "[SLOWEST]" in caplog.text
+        assert "572.4s" in caplog.text
+
+    def test_warns_when_analyst_exceeds_2x_median(self, caplog):
+        import logging
+        timings = [
+            {"name": "fast1", "duration": 100.0, "turns": 5},
+            {"name": "fast2", "duration": 110.0, "turns": 6},
+            {"name": "slow", "duration": 500.0, "turns": 20},
+        ]
+        with caplog.at_level(logging.WARNING, logger="thresher.agents.analysts"):
+            _log_timing_summary(timings)
+
+        assert "consider reducing prompt scope" in caplog.text
+        assert "slow" in caplog.text
+
+    def test_no_warning_when_all_similar(self, caplog):
+        import logging
+        timings = [
+            {"name": "a", "duration": 100.0, "turns": 5},
+            {"name": "b", "duration": 110.0, "turns": 6},
+            {"name": "c", "duration": 105.0, "turns": 5},
+        ]
+        with caplog.at_level(logging.WARNING, logger="thresher.agents.analysts"):
+            _log_timing_summary(timings)
+
+        assert "consider reducing prompt scope" not in caplog.text
+
+    def test_empty_timings(self, caplog):
+        import logging
+        with caplog.at_level(logging.INFO, logger="thresher.agents.analysts"):
+            _log_timing_summary([])
+        assert "timing summary" not in caplog.text
+
+    def test_single_analyst_no_slowest_tag(self, caplog):
+        import logging
+        timings = [{"name": "paranoid", "duration": 300.0, "turns": 10}]
+        with caplog.at_level(logging.INFO, logger="thresher.agents.analysts"):
+            _log_timing_summary(timings)
+
+        assert "paranoid" in caplog.text
+        assert "[SLOWEST]" not in caplog.text

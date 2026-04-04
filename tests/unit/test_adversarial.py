@@ -6,10 +6,12 @@ import json
 
 from thresher.agents.adversarial import (
     RISK_THRESHOLD,
+    _deduplicate_findings,
     _extract_high_risk,
     _extract_result_from_stream,
     _finding_risk_score,
     _merge_adversarial_results,
+    _normalize_title,
     _parse_adversarial_output,
 )
 
@@ -226,3 +228,105 @@ class TestExtractResultFromStream:
             '{"type":"result","result":"final answer"}\n'
         )
         assert _extract_result_from_stream(stream) == "final answer"
+
+
+class TestNormalizeTitle:
+    def test_lowercases(self):
+        assert _normalize_title("Suspicious Eval Call") == "suspicious eval call"
+
+    def test_collapses_whitespace(self):
+        assert _normalize_title("suspicious   eval   call") == "suspicious eval call"
+
+    def test_strips(self):
+        assert _normalize_title("  spaced  ") == "spaced"
+
+    def test_empty(self):
+        assert _normalize_title("") == ""
+
+
+class TestDeduplicateFindings:
+    def test_removes_duplicates_same_file_and_title(self):
+        findings = [
+            {
+                "file_path": "/a.py",
+                "title": "Suspicious eval",
+                "risk_score": 7,
+                "source_analyst": "paranoid",
+            },
+            {
+                "file_path": "/a.py",
+                "title": "Suspicious eval",
+                "risk_score": 5,
+                "source_analyst": "behaviorist",
+            },
+            {
+                "file_path": "/a.py",
+                "title": "Suspicious eval",
+                "risk_score": 7,
+                "source_analyst": "netwatch",
+            },
+        ]
+        result = _deduplicate_findings(findings)
+        assert len(result) == 1
+        assert result[0]["risk_score"] == 7
+        assert result[0]["duplicate_count"] == 3
+        assert sorted(result[0]["source_analysts"]) == ["behaviorist", "netwatch", "paranoid"]
+
+    def test_keeps_highest_risk_score(self):
+        findings = [
+            {"file_path": "/a.py", "title": "Bad", "risk_score": 5, "source_analyst": "a"},
+            {"file_path": "/a.py", "title": "Bad", "risk_score": 9, "source_analyst": "b"},
+            {"file_path": "/a.py", "title": "Bad", "risk_score": 7, "source_analyst": "c"},
+        ]
+        result = _deduplicate_findings(findings)
+        assert result[0]["risk_score"] == 9
+
+    def test_unique_findings_pass_through(self):
+        findings = [
+            {"file_path": "/a.py", "title": "Issue A", "risk_score": 7, "source_analyst": "paranoid"},
+            {"file_path": "/b.py", "title": "Issue B", "risk_score": 5, "source_analyst": "behaviorist"},
+        ]
+        result = _deduplicate_findings(findings)
+        assert len(result) == 2
+        for f in result:
+            assert f["duplicate_count"] == 1
+
+    def test_title_normalization_groups_variants(self):
+        findings = [
+            {"file_path": "/a.py", "title": "Suspicious Eval", "risk_score": 7, "source_analyst": "a"},
+            {"file_path": "/a.py", "title": "suspicious  eval", "risk_score": 5, "source_analyst": "b"},
+        ]
+        result = _deduplicate_findings(findings)
+        assert len(result) == 1
+        assert result[0]["duplicate_count"] == 2
+
+    def test_different_files_not_deduped(self):
+        findings = [
+            {"file_path": "/a.py", "title": "Eval", "risk_score": 7, "source_analyst": "a"},
+            {"file_path": "/b.py", "title": "Eval", "risk_score": 7, "source_analyst": "b"},
+        ]
+        result = _deduplicate_findings(findings)
+        assert len(result) == 2
+
+    def test_empty_input(self):
+        assert _deduplicate_findings([]) == []
+
+    def test_does_not_mutate_input(self):
+        findings = [
+            {"file_path": "/a.py", "title": "Bad", "risk_score": 7, "source_analyst": "a"},
+            {"file_path": "/a.py", "title": "Bad", "risk_score": 5, "source_analyst": "b"},
+        ]
+        originals = [dict(f) for f in findings]
+        _deduplicate_findings(findings)
+        # Original findings should not have duplicate_count added
+        for orig, current in zip(originals, findings):
+            assert orig == current
+
+    def test_confidence_breaks_ties(self):
+        findings = [
+            {"file_path": "/a.py", "title": "Bad", "risk_score": 7, "confidence": 60, "source_analyst": "a"},
+            {"file_path": "/a.py", "title": "Bad", "risk_score": 7, "confidence": 90, "source_analyst": "b"},
+        ]
+        result = _deduplicate_findings(findings)
+        assert result[0]["confidence"] == 90
+        assert result[0]["source_analysts"] == ["a", "b"]
