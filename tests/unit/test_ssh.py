@@ -11,6 +11,7 @@ import pytest
 from thresher.vm.ssh import (
     SSHError,
     SSHResult,
+    _redact_credentials,
     _shell_quote,
     ssh_copy_from,
     ssh_exec,
@@ -144,3 +145,65 @@ class TestSSHWriteFile:
         ssh_write_file("vm", "test content", "/remote/out.txt")
         assert mock_copy_to.call_args[0][2] == "/remote/out.txt"
         assert mock_copy_to.call_args[0][0] == "vm"
+
+
+class TestRedactCredentials:
+    def test_redacts_oat_token(self):
+        text = "command with sk-ant-oat01-jcFmozABC123_def in it"
+        result = _redact_credentials(text)
+        assert "sk-ant-oat01-****" in result
+        assert "jcFmozABC123_def" not in result
+
+    def test_redacts_api_key(self):
+        text = "key is sk-ant-api03-abcDEF789xyz"
+        result = _redact_credentials(text)
+        assert "sk-ant-api****" in result
+        assert "abcDEF789xyz" not in result
+
+    def test_redacts_printf_tmpfs_payload(self):
+        text = "printf '%s' 'sk-ant-oat01-secret123' > /dev/shm/.cred_KEY"
+        result = _redact_credentials(text)
+        assert "'[REDACTED]'" in result
+        assert "secret123" not in result
+        assert "/dev/shm/.cred_KEY" in result
+
+    def test_preserves_non_credential_text(self):
+        text = "echo hello world"
+        result = _redact_credentials(text)
+        assert result == text
+
+    def test_preserves_printf_not_targeting_tmpfs(self):
+        text = "printf '%s' 'safe-value' > /tmp/output.txt"
+        result = _redact_credentials(text)
+        assert "safe-value" in result
+
+    def test_redacts_credential_in_logged_label(self):
+        # Simulate the label that ssh_exec logs
+        command = "printf '%s' 'sk-ant-oat01-longTokenValue_here' > /dev/shm/.cred_ANTHROPIC"
+        label = _redact_credentials(command[:80])
+        assert "longTokenValue" not in label
+        assert "/dev/shm/.cred_ANTHROPIC" in label
+
+    @patch("thresher.vm.ssh.subprocess.Popen")
+    def test_ssh_exec_redacts_label_in_log(self, mock_popen_cls, caplog):
+        mock_popen_cls.return_value = _mock_popen()
+        import logging
+        with caplog.at_level(logging.INFO):
+            ssh_exec("vm", "printf '%s' 'sk-ant-oat01-SECRET' > /dev/shm/.cred_KEY")
+        # The logged label should be redacted
+        assert "sk-ant-oat01-SECRET" not in caplog.text
+        assert "[REDACTED]" in caplog.text
+
+    @patch("thresher.vm.ssh.subprocess.Popen")
+    def test_ssh_exec_redacts_stdout_in_log(self, mock_popen_cls, caplog):
+        mock_popen_cls.return_value = _mock_popen(
+            stdout_data="token: sk-ant-oat01-leaked123\n"
+        )
+        import logging
+        with caplog.at_level(logging.INFO):
+            result = ssh_exec("vm", "echo token")
+        # The actual stdout should NOT be redacted (only logs)
+        assert "sk-ant-oat01-leaked123" in result.stdout
+        # But the log output should be redacted
+        assert "sk-ant-oat01-****" in caplog.text
+        assert "sk-ant-oat01-leaked123" not in caplog.text

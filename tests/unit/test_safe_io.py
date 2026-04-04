@@ -130,6 +130,14 @@ class TestValidateCopiedTree:
         for ext in ALLOWED_EXTENSIONS:
             assert (tmp_path / f"file{ext}").exists()
 
+    def test_allows_html_files(self, tmp_path):
+        html_file = tmp_path / "report.html"
+        html_file.write_text("<html><body>Report</body></html>")
+
+        validate_copied_tree(tmp_path)
+
+        assert html_file.exists()
+
     def test_empty_directory_passes(self, tmp_path):
         validate_copied_tree(tmp_path)  # should not raise
 

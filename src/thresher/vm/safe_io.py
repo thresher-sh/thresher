@@ -26,7 +26,7 @@ def _limits():
     return active_limits
 
 # Allowed file extensions in report output
-ALLOWED_EXTENSIONS = {".json", ".md", ".txt", ".csv", ".log", ".sarif"}
+ALLOWED_EXTENSIONS = {".json", ".md", ".txt", ".csv", ".log", ".sarif", ".html"}
 
 # Expected files in a complete report
 EXPECTED_REPORT_FILES = [
