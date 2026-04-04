@@ -22,6 +22,7 @@ import logging
 from typing import Any
 
 from thresher.config import ScanConfig
+from thresher.vm.safe_io import safe_json_loads
 from thresher.vm.ssh import ssh_exec, ssh_write_file
 
 logger = logging.getLogger(__name__)
@@ -191,6 +192,28 @@ def run_predep_discovery(
 
     result = _parse_predep_output(stdout)
 
+    # Fallback: if parsing returned empty, check if the agent wrote
+    # the output file directly to the expected path in the VM.
+    if not result.get("hidden_dependencies"):
+        try:
+            fb_stdout, _fb_stderr, fb_rc = ssh_exec(
+                vm_name, f"cat {OUTPUT_PATH}", timeout=10,
+            )
+            if fb_rc == 0 and fb_stdout.strip():
+                fallback = safe_json_loads(fb_stdout, source="predep-fallback")
+                if (
+                    fallback is not None
+                    and isinstance(fallback, dict)
+                    and "hidden_dependencies" in fallback
+                ):
+                    logger.info(
+                        "Recovered predep output from fallback path %s",
+                        OUTPUT_PATH,
+                    )
+                    result = fallback
+        except (json.JSONDecodeError, OSError):
+            logger.debug("No fallback predep output at %s", OUTPUT_PATH)
+
     # Write the result to the VM so the container can read it
     try:
         _, _, rc = ssh_exec(vm_name, f"mkdir -p $(dirname {OUTPUT_PATH})")
@@ -285,7 +308,8 @@ def _parse_predep_output(raw_output: str) -> dict[str, Any]:
                         pass
                     break
 
-    logger.warning("Could not parse predep agent output")
+    preview = raw_output[:500] if raw_output else "(empty)"
+    logger.warning("Could not parse predep agent output. Raw (first 500 chars): %s", preview)
     return _empty_result("Failed to parse agent output")
 
 
