@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import statistics
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -167,6 +169,22 @@ def _extract_result_from_stream(raw_output: str) -> str:
         return ""
 
     return raw_output
+
+
+def _count_turns_from_stream(raw_output: str) -> int:
+    """Count the number of assistant turns in stream-json output."""
+    turns = 0
+    for line in raw_output.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            if isinstance(obj, dict) and obj.get("type") == "assistant":
+                turns += 1
+        except json.JSONDecodeError:
+            continue
+    return turns
 
 
 _REQUIRED_ANALYST_KEYS = {"analyst", "findings", "summary", "risk_score"}
@@ -355,11 +373,13 @@ def _run_single_analyst(
     vm_name: str,
     config: ScanConfig,
     analyst_def: dict[str, Any],
-) -> None:
+) -> dict[str, Any] | None:
     """Run a single analyst agent inside the VM.
 
     Writes findings to /opt/scan-results/analyst-{N}-{name}-findings.json
-    and a markdown summary alongside it. Returns None.
+    and a markdown summary alongside it. Returns timing metadata dict
+    (used only by run_all_analysts for logging), or None on early failure.
+    No scan data is returned to the host.
     """
     number = analyst_def["number"]
     name = analyst_def["name"]
@@ -378,7 +398,7 @@ def _run_single_analyst(
         ssh_write_file(vm_name, prompt, prompt_path)
     except Exception:
         logger.warning("Failed to write prompt for %s", label, exc_info=True)
-        return
+        return None
 
     model = config.model
     claude_cmd = (
@@ -407,6 +427,7 @@ def _run_single_analyst(
         claude_cmd = "; ".join(exports) + "; " + claude_cmd
 
     logger.info("Invoking %s in VM %s", label, vm_name)
+    start_time = time.monotonic()
     try:
         stdout, _stderr, _rc = ssh_exec(
             vm_name, claude_cmd, timeout=3600,
@@ -414,12 +435,17 @@ def _run_single_analyst(
         raw_output = stdout
     except Exception as exc:
         logger.error("%s invocation failed: %s", label, exc)
-        return
+        return None
+    end_time = time.monotonic()
+    duration = end_time - start_time
 
+    turns = _count_turns_from_stream(raw_output)
     findings = _parse_analyst_json_output(raw_output, analyst_def)
     logger.info(
-        "%s completed: %d findings, risk_score=%s",
-        label,
+        "Analyst %s completed in %.1fs (turns=%d): %d findings, risk_score=%s",
+        name,
+        duration,
+        turns,
         len(findings.get("findings", [])),
         findings.get("risk_score", "?"),
     )
@@ -439,6 +465,43 @@ def _run_single_analyst(
         ssh_write_file(vm_name, md, md_path)
     except Exception:
         logger.warning("Failed to save %s findings markdown", label, exc_info=True)
+
+    return {"name": name, "duration": duration, "turns": turns}
+
+
+# ---------------------------------------------------------------------------
+# Timing summary
+# ---------------------------------------------------------------------------
+
+def _log_timing_summary(timings: list[dict[str, Any]]) -> None:
+    """Log a summary table of analyst runtimes with slowest-analyst warning."""
+    if not timings:
+        return
+
+    durations = [t["duration"] for t in timings]
+    median_duration = statistics.median(durations)
+    max_duration = max(durations)
+    slowest_name = next(t["name"] for t in timings if t["duration"] == max_duration)
+
+    lines = ["Analyst timing summary:"]
+    for t in sorted(timings, key=lambda x: x["name"]):
+        tag = "  [SLOWEST]" if t["duration"] == max_duration and len(timings) > 1 else ""
+        lines.append(f"  analyst-{t['name']}:{' ' * max(1, 30 - len(t['name']))} {t['duration']:>7.1f}s  (turns={t['turns']}){tag}")
+
+    logger.info("\n".join(lines))
+
+    # Warn if any analyst took more than 2x the median runtime
+    if len(timings) > 1:
+        for t in timings:
+            if t["duration"] > 2 * median_duration:
+                logger.warning(
+                    "Analyst %s took %.1fs (%.1fx median of %.1fs) — "
+                    "consider reducing prompt scope",
+                    t["name"],
+                    t["duration"],
+                    t["duration"] / median_duration,
+                    median_duration,
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +544,8 @@ def run_all_analysts(vm_name: str, config: ScanConfig) -> None:
     except Exception:
         logger.warning("Failed to write analyst stop hook settings", exc_info=True)
 
+    timings: list[dict[str, Any]] = []
+
     with ThreadPoolExecutor(max_workers=8) as executor:
         future_to_name = {}
         for analyst_def in ANALYST_DEFINITIONS:
@@ -490,9 +555,12 @@ def run_all_analysts(vm_name: str, config: ScanConfig) -> None:
         for future in as_completed(future_to_name):
             label = future_to_name[future]
             try:
-                future.result()
+                timing = future.result()
+                if timing is not None:
+                    timings.append(timing)
                 logger.info("%s finished successfully", label)
             except Exception:
                 logger.exception("%s raised an unexpected exception", label)
 
+    _log_timing_summary(timings)
     logger.info("All %d analyst agents completed", len(ANALYST_DEFINITIONS))
