@@ -115,7 +115,7 @@ def print_findings_summary(
 
 def print_report_path(path: str) -> None:
     """Print the report output location."""
-    print(f"  Report: {ARCTIC}{path}{RESET}")
+    print(f"  Report: {ARCTIC}{path}/report.html{RESET}")
     print()
 
 

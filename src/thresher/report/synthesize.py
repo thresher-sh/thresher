@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import logging
 from datetime import datetime, timezone
@@ -208,6 +209,21 @@ def generate_report(
         _generate_agent_report(
             vm_name, config, scanner_results, ai_findings, enriched, report_dir
         )
+
+    # --- HTML report (always generated after markdown reports) ---
+    agent_succeeded = False
+    if not config.skip_ai:
+        check_cmd = (
+            f"test -f {report_dir}/executive-summary.md "
+            f"&& test -f {report_dir}/detailed-report.md"
+        )
+        _, _, check_exit = ssh_exec(vm_name, check_cmd)
+        agent_succeeded = check_exit == 0
+
+    _generate_html_report(
+        vm_name, config, enriched, scanner_results, report_dir,
+        agent_succeeded=agent_succeeded,
+    )
 
     logger.info("Report generated at %s", report_dir)
     return report_dir
@@ -640,7 +656,33 @@ def _build_template_context(
         if eco:
             ecosystems.add(eco)
 
-    return {
+    # Split findings into scanner vs AI
+    scanner_findings, ai_findings = _split_findings_by_source(enriched)
+
+    # Count by priority for each source
+    scanner_finding_counts: dict[str, int] = {}
+    for f in scanner_findings:
+        p = f.get("composite_priority", "low")
+        scanner_finding_counts[p] = scanner_finding_counts.get(p, 0) + 1
+
+    ai_finding_counts: dict[str, int] = {}
+    for f in ai_findings:
+        p = f.get("composite_priority", "low")
+        ai_finding_counts[p] = ai_finding_counts.get(p, 0) + 1
+
+    # Group AI findings by priority (all PRIORITY_ORDER keys present)
+    ai_findings_grouped: dict[str, list[dict[str, Any]]] = {
+        p: [f for f in ai_findings if f.get("composite_priority") == p]
+        for p in PRIORITY_ORDER
+    }
+
+    # Thresher version
+    try:
+        thresher_version = importlib.metadata.version("thresher")
+    except importlib.metadata.PackageNotFoundError:
+        thresher_version = "unknown"
+
+    context = {
         "scan_date": scan_date,
         "repo_url": config.repo_url,
         "depth": config.depth,
@@ -655,7 +697,18 @@ def _build_template_context(
         "total_packages": len(packages),
         "ecosystems": sorted(ecosystems),
         "config": config,
+        # New fields
+        "scanner_finding_counts": scanner_finding_counts,
+        "ai_finding_counts": ai_finding_counts,
+        "ai_findings_grouped": ai_findings_grouped,
+        "upgrade_packages": _build_upgrade_packages(enriched),
+        "thresher_version": thresher_version,
+        "fix_metadata": {},
+        "trust_signals": [],
+        "agent_executive_summary": None,
+        "agent_synthesis": None,
     }
+    return context
 
 
 def _build_template_synthesis_findings(
@@ -710,3 +763,120 @@ def _build_template_synthesis_findings(
                  "The AI synthesis agent did not produce output for this run.*")
 
     return "\n".join(lines)
+
+
+def _build_upgrade_packages(enriched: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group findings by package, keeping highest severity, collecting CVE IDs.
+
+    Only includes findings that have a ``fix_version``.  Results are sorted
+    from highest to lowest severity using PRIORITY_ORDER.
+
+    Returns a list of dicts with keys:
+        package_name, package_version, fix_version, composite_priority,
+        cvss_score, cve_ids
+    """
+    priority_rank = {p: i for i, p in enumerate(PRIORITY_ORDER)}
+
+    # Group by (package_name, package_version) — only fixable findings
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for f in enriched:
+        if not f.get("fix_version"):
+            continue
+        key = (f.get("package_name", ""), f.get("package_version", ""))
+        if key not in groups:
+            groups[key] = {
+                "package_name": f.get("package_name", ""),
+                "package_version": f.get("package_version", ""),
+                "fix_version": f.get("fix_version", ""),
+                "composite_priority": f.get("composite_priority", "low"),
+                "cvss_score": f.get("cvss_score"),
+                "cve_ids": set(f.get("cve_ids") or []),
+            }
+        else:
+            entry = groups[key]
+            # Keep highest severity
+            current_rank = priority_rank.get(entry["composite_priority"], 99)
+            new_rank = priority_rank.get(f.get("composite_priority", "low"), 99)
+            if new_rank < current_rank:
+                entry["composite_priority"] = f.get("composite_priority", "low")
+                entry["cvss_score"] = f.get("cvss_score")
+            # Collect all CVE IDs
+            entry["cve_ids"].update(f.get("cve_ids") or [])
+
+    # Convert sets to sorted lists and sort results by severity
+    result = []
+    for entry in groups.values():
+        entry["cve_ids"] = sorted(entry["cve_ids"])
+        result.append(entry)
+
+    result.sort(key=lambda e: priority_rank.get(e["composite_priority"], 99))
+    return result
+
+
+def _render_html_report(context: dict[str, Any]) -> str:
+    """Render the HTML report template with autoescaping enabled."""
+    import os
+    from markupsafe import Markup
+
+    templates_dir = os.path.join(os.path.dirname(__file__), "templates")
+    html_env = Environment(
+        loader=FileSystemLoader(templates_dir),
+        autoescape=select_autoescape(["html", "html.j2"]),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+
+    safe_context = dict(context)
+    if safe_context.get("agent_executive_summary"):
+        safe_context["agent_executive_summary"] = Markup(safe_context["agent_executive_summary"])
+    if safe_context.get("agent_synthesis"):
+        safe_context["agent_synthesis"] = Markup(safe_context["agent_synthesis"])
+
+    template = html_env.get_template("report.html.j2")
+    return template.render(**safe_context)
+
+
+def _generate_html_report(
+    vm_name: str,
+    config: ScanConfig,
+    enriched: list[dict[str, Any]],
+    scanner_results: Any,
+    report_dir: str,
+    agent_succeeded: bool = False,
+) -> None:
+    """Generate the HTML report and write it to the VM.
+
+    Called after markdown reports are generated. If the agent succeeded,
+    reads its narrative markdown files from the VM and converts them to
+    HTML for inclusion in the report.
+    """
+    import markdown as md_lib
+
+    context = _build_template_context(config, enriched, scanner_results)
+
+    if agent_succeeded:
+        for filename, key in [
+            ("executive-summary.md", "agent_executive_summary"),
+            ("synthesis-findings.md", "agent_synthesis"),
+        ]:
+            try:
+                result = ssh_exec(vm_name, f"cat {report_dir}/{filename} 2>/dev/null")
+                if result.exit_code == 0 and result.stdout.strip():
+                    context[key] = md_lib.markdown(result.stdout)
+            except Exception:
+                logger.debug("Could not read %s for HTML report", filename)
+
+    html_report = _render_html_report(context)
+    ssh_write_file(vm_name, html_report, f"{report_dir}/report.html")
+
+
+def _split_findings_by_source(
+    enriched: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split enriched findings into (scanner_findings, ai_findings).
+
+    AI findings are those with ``source_tool == "ai_analysis"``.
+    """
+    scanner_findings = [f for f in enriched if f.get("source_tool") != "ai_analysis"]
+    ai_findings = [f for f in enriched if f.get("source_tool") == "ai_analysis"]
+    return scanner_findings, ai_findings

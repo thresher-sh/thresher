@@ -2,6 +2,10 @@
 
 v0.4.0 is a big change to operating model...
 
+## Docker Primary
+
+v0.3.0 took steps towards this with docker in lima... in v0.4.0 the docker image is the primary distributable and the application becomes orchestration of that against either lima vm, remote location, or directly executing the docker container (Like CICD). In 0.4.0 there is no build step, as build is done once and everyone one uses same docker image.
+
 Right now we are spinning up a VM and orchestrating into it etc... V3 instead operates as one bundle that expects it is running inside a secure environment... It lowers complexity and orchestrates everything locally. 
 
 - On a mac or linux machine with hypervisor etc, that means we launch lima vm and run the application completely within the lima vm, and then we stream out the reports... But this will not be the recommended or default way to run.

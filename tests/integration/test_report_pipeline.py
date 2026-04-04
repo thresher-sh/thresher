@@ -133,3 +133,49 @@ class TestGenerateReport:
         # Should match /opt/security-reports/YYYYMMDD-HHMMSS
         import re
         assert re.search(r"/\d{8}-\d{6}$", report_path)
+
+    @patch("thresher.report.synthesize.ssh_write_file")
+    @patch("thresher.report.synthesize.ssh_exec")
+    @patch("thresher.report.scoring.load_kev_catalog")
+    @patch("thresher.report.scoring.fetch_epss_scores")
+    def test_html_report_generated(self, mock_epss, mock_kev, mock_exec, mock_write):
+        mock_epss.return_value = {}
+        mock_kev.return_value = set()
+        mock_exec.return_value = SSHResult("", "", 1)
+        mock_write.return_value = None
+
+        config = _make_config(skip_ai=True)
+        generate_report("vm", config)
+
+        write_calls = mock_write.call_args_list
+        remote_paths = [c[0][2] for c in write_calls]
+        assert any("report.html" in p for p in remote_paths)
+
+    @patch("thresher.report.synthesize.ssh_write_file")
+    @patch("thresher.report.synthesize.ssh_exec")
+    @patch("thresher.report.scoring.load_kev_catalog")
+    @patch("thresher.report.scoring.fetch_epss_scores")
+    def test_html_report_includes_agent_narrative(self, mock_epss, mock_kev, mock_exec, mock_write):
+        mock_epss.return_value = {}
+        mock_kev.return_value = set()
+        mock_write.return_value = None
+
+        def exec_side_effect(vm_name, cmd, **kwargs):
+            if cmd.startswith("test -f"):
+                return SSHResult("", "", 0)
+            if "executive-summary.md" in cmd:
+                return SSHResult("# Summary\n\nThis repo has **critical issues**.", "", 0)
+            if "synthesis-findings.md" in cmd:
+                return SSHResult("# Synthesis\n\nAI and scanners agree.", "", 0)
+            return SSHResult("", "", 0)
+
+        mock_exec.side_effect = exec_side_effect
+
+        config = _make_config(skip_ai=False)
+        generate_report("vm", config)
+
+        html_writes = [c for c in mock_write.call_args_list if "report.html" in c[0][2]]
+        assert len(html_writes) == 1
+        html_content = html_writes[0][0][1]
+        assert "critical issues" in html_content
+        assert "AI and scanners agree" in html_content

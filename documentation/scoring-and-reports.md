@@ -99,9 +99,77 @@ The final recommendation is based on the highest-priority finding:
 | High (no P0/Critical) | **USE WITH CAUTION** |
 | Medium or below only | **GO** |
 
+## Report Generation
+
+Report generation is the final stage of the scan pipeline. It takes enriched findings from all scanners and AI agents and produces a set of report artifacts inside the VM. The report directory is then copied to the host via `ssh_copy_from_safe()`.
+
+### Generation Paths
+
+There are two report generation paths depending on whether AI is enabled:
+
+**Agent path** (default): A Claude Code headless agent runs inside the VM and synthesizes all findings into narrative markdown reports. The agent reads the enriched findings JSON and produces `executive-summary.md`, `detailed-report.md`, and `synthesis-findings.md`. If the agent fails, Thresher falls back to the template path automatically.
+
+**Template path** (`--skip-ai`): Jinja2 templates render the markdown reports directly from enriched finding data. Deterministic and fast, but the narrative prose is less sophisticated than agent-generated content.
+
+**HTML report** (always): After either path completes, an HTML report (`report.html`) is always generated using a Jinja2 template. This is the primary report artifact — the CLI prints its path at the end of a scan. When agent narratives are available, they are read from the VM and embedded into the HTML report. When they aren't (template path or agent failure), the HTML template generates its own prose.
+
+### Report Generation Flow
+
+```
+enriched findings + AI findings
+         │
+         ├── Agent path ──────────────> executive-summary.md
+         │   (Claude headless in VM)    detailed-report.md
+         │                              synthesis-findings.md
+         │
+         ├── Template path ───────────> executive-summary.md
+         │   (Jinja2 on host,           detailed-report.md
+         │    fallback or --skip-ai)    synthesis-findings.md
+         │
+         └── HTML report ─────────────> report.html (primary artifact)
+             (always runs,
+              incorporates agent
+              narratives if available)
+```
+
+### Template Context
+
+Both template paths (markdown and HTML) share the same context builder (`_build_template_context`). Key context fields:
+
+| Field | Description |
+|-------|-------------|
+| `risk_assessment` | GO / CAUTION / DO NOT USE |
+| `priority_counts` | Finding counts by priority level |
+| `top_findings` | Top 10 findings sorted by composite priority |
+| `findings_by_priority` | All findings grouped by priority |
+| `scanner_finding_counts` | Scanner-only counts by priority |
+| `ai_finding_counts` | AI-only counts by priority |
+| `ai_findings_grouped` | AI findings grouped by priority (for card rendering) |
+| `upgrade_packages` | Deduplicated packages with available fix versions |
+| `agent_executive_summary` | Agent narrative HTML (None if unavailable) |
+| `agent_synthesis` | Agent synthesis narrative HTML (None if unavailable) |
+
+### HTML Report Safety
+
+The HTML template uses a separate Jinja2 `Environment` with HTML autoescaping enabled. All user-controlled content (repo URLs, finding titles, file paths, descriptions) is automatically escaped to prevent XSS. Agent narratives are markdown converted to HTML via the `markdown` library and marked safe with `Markup()` so they render correctly without double-escaping.
+
 ## Report Output
 
-Reports are written to `<output-dir>/<repo-name>-<timestamp>/`:
+Reports are written to `<output-dir>/<scan-id>/`:
+
+### report.html (primary artifact)
+
+Self-contained HTML report with all CSS inline. Dark-themed, responsive design with these sections:
+
+- **Verdict**: GO (green) / CAUTION (amber) / DO NOT USE (red) with finding count badges
+- **Executive Summary**: Agent-generated narrative when available, template prose otherwise. Includes required mitigations for P0/Critical/High findings.
+- **Findings Distribution**: Visual bar chart showing scanner and AI finding counts by severity
+- **Scanner Findings**: Top 10 findings table with severity, CVE, and CVSS
+- **AI Analyst Findings**: Cards grouped by severity with confidence scores and analyst attribution. Critical/High shown as full cards, Medium/Low in a collapsible section.
+- **Dependency Upgrades**: Table of packages with current and fixed versions (conditional — only shown when upgrades are available)
+- **Pipeline Details**: Collapsible section listing all scanners and AI personas used
+
+Conditional sections (trust assessment, remediation PR) render only when their data is available, keeping the report clean for scans that don't produce that data.
 
 ### executive-summary.md
 
@@ -132,6 +200,10 @@ Comprehensive findings grouped by priority:
 ```
 
 Each finding includes source tool, CVSS/EPSS/KEV status, description, and remediation guidance.
+
+### synthesis-findings.md
+
+The synthesis agent's own analysis of how findings were merged, prioritized, and evaluated across scanner and AI tracks. Includes agreements/disagreements between the two analysis approaches and reasoning for priority elevation or downgrade decisions.
 
 ### findings.json
 
@@ -185,3 +257,15 @@ scan-results/
 ├── scancode.json
 └── clamav.txt
 ```
+
+## Templates
+
+Report templates live in `src/thresher/report/templates/`:
+
+| Template | Format | Purpose |
+|----------|--------|---------|
+| `report.html.j2` | HTML | Primary report artifact — polished, self-contained |
+| `executive_summary.md.j2` | Markdown | Executive summary (fallback for `--skip-ai`) |
+| `detailed_report.md.j2` | Markdown | Full findings report (fallback for `--skip-ai`) |
+
+The HTML template uses the same CSS design system as the Thresher website (dark theme, JetBrains Mono + Inter fonts, violet accent). Google Fonts are linked for host-side viewing but fall back gracefully to system fonts.
