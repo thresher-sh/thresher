@@ -214,29 +214,133 @@ def check_version_history(system: str, package: str, version: str) -> None:
                 pass
 
 
-def load_manifest() -> list[tuple[str, str, str]]:
-    """Load the dependency manifest and return (system, name, version) tuples."""
-    if not os.path.isfile(MANIFEST_PATH):
-        return []
-
+def _parse_package_json(path: str) -> list[tuple[str, str, str]]:
+    """Extract packages from a package.json or package-lock.json."""
     try:
-        with open(MANIFEST_PATH) as f:
-            manifest = json.load(f)
+        with open(path) as f:
+            data = json.load(f)
     except (json.JSONDecodeError, IOError):
         return []
 
     packages = []
-    for ecosystem, deps in manifest.items():
-        system = SYSTEM_MAP.get(ecosystem)
-        if not system:
+    # package-lock.json has "packages" or "dependencies" at top level
+    lock_deps = data.get("packages", data.get("dependencies", {}))
+    if isinstance(lock_deps, dict):
+        for name, info in lock_deps.items():
+            if not name or name == "":
+                continue
+            # package-lock uses "" for root, skip it
+            clean_name = name.replace("node_modules/", "")
+            if not clean_name:
+                continue
+            version = "unknown"
+            if isinstance(info, dict):
+                version = info.get("version", "unknown")
+            elif isinstance(info, str):
+                version = info
+            packages.append(("npm", clean_name, version))
+
+    # package.json has "dependencies" and "devDependencies" as {name: version}
+    if not packages:
+        for key in ("dependencies", "devDependencies"):
+            deps = data.get(key, {})
+            if isinstance(deps, dict):
+                for name, version in deps.items():
+                    packages.append(("npm", name, str(version)))
+
+    return packages
+
+
+def _parse_cargo_toml(path: str) -> list[tuple[str, str, str]]:
+    """Extract packages from a Cargo.toml (simple parsing)."""
+    packages = []
+    try:
+        with open(path) as f:
+            content = f.read()
+    except IOError:
+        return []
+
+    in_deps = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[dependencies]") or stripped.startswith("[dev-dependencies]"):
+            in_deps = True
             continue
-        if isinstance(deps, list):
-            for dep in deps:
-                if isinstance(dep, dict):
-                    name = dep.get("name", "")
-                    version = dep.get("version", "unknown")
-                    if name:
-                        packages.append((system, name, version))
+        if stripped.startswith("[") and in_deps:
+            in_deps = False
+            continue
+        if in_deps and "=" in stripped:
+            name = stripped.split("=")[0].strip()
+            version_part = stripped.split("=", 1)[1].strip().strip('"').strip("'")
+            if name:
+                packages.append(("cargo", name, version_part or "unknown"))
+
+    return packages
+
+
+def load_manifest() -> list[tuple[str, str, str]]:
+    """Load the dependency manifest and return (system, name, version) tuples.
+
+    Searches multiple locations for dependency information:
+    1. /opt/deps/dep_manifest.json (primary, written by dependency resolution)
+    2. /opt/target/package.json or package-lock.json (npm)
+    3. /opt/target/Cargo.toml (Rust)
+    4. /opt/deps/ subdirectories
+    """
+    searched_paths = []
+
+    # 1. Primary manifest from dependency resolution
+    searched_paths.append(MANIFEST_PATH)
+    if os.path.isfile(MANIFEST_PATH):
+        try:
+            with open(MANIFEST_PATH) as f:
+                manifest = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            manifest = {}
+
+        packages = []
+        for ecosystem, deps in manifest.items():
+            system = SYSTEM_MAP.get(ecosystem)
+            if not system:
+                continue
+            if isinstance(deps, list):
+                for dep in deps:
+                    if isinstance(dep, dict):
+                        name = dep.get("name", "")
+                        version = dep.get("version", "unknown")
+                        if name:
+                            packages.append((system, name, version))
+        if packages:
+            return packages
+
+    # 2. Fall back to raw manifest files in /opt/target/
+    fallback_paths = [
+        ("/opt/target/package-lock.json", _parse_package_json),
+        ("/opt/target/package.json", _parse_package_json),
+        ("/opt/target/Cargo.toml", _parse_cargo_toml),
+    ]
+
+    packages = []
+    for path, parser in fallback_paths:
+        searched_paths.append(path)
+        if os.path.isfile(path):
+            pkgs = parser(path)
+            packages.extend(pkgs)
+
+    # 3. Also check /opt/deps/ for manifest files
+    deps_fallbacks = [
+        ("/opt/deps/package-lock.json", _parse_package_json),
+        ("/opt/deps/package.json", _parse_package_json),
+        ("/opt/deps/Cargo.toml", _parse_cargo_toml),
+    ]
+    for path, parser in deps_fallbacks:
+        searched_paths.append(path)
+        if os.path.isfile(path):
+            pkgs = parser(path)
+            packages.extend(pkgs)
+
+    if not packages:
+        print(f"WARNING: No manifests found. Searched: {', '.join(searched_paths)}")
 
     return packages
 
@@ -245,7 +349,13 @@ if __name__ == "__main__":
     packages = load_manifest()
     if not packages:
         print("No dependencies found in manifest — skipping deps.dev checks")
-        output = {"scanner": "deps-dev", "findings": [], "total": 0, "packages_checked": 0}
+        output = {
+            "scanner": "deps-dev",
+            "findings": [],
+            "total": 0,
+            "packages_checked": 0,
+            "warning": "No dependency manifests found",
+        }
         os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
         with open(OUTPUT_PATH, "w") as f:
             json.dump(output, f, indent=2)

@@ -262,31 +262,97 @@ def check_pypi_package(name: str, version: str) -> None:
                     })
 
 
-def load_manifest() -> dict[str, list[tuple[str, str]]]:
-    """Load manifest and return {ecosystem: [(name, version), ...]}."""
-    if not os.path.isfile(MANIFEST_PATH):
-        return {}
-
+def _parse_package_json(path: str) -> list[tuple[str, str]]:
+    """Extract (name, version) tuples from a package.json or package-lock.json."""
     try:
-        with open(MANIFEST_PATH) as f:
-            manifest = json.load(f)
+        with open(path) as f:
+            data = json.load(f)
     except (json.JSONDecodeError, IOError):
-        return {}
+        return []
 
-    result: dict[str, list[tuple[str, str]]] = {}
-    for ecosystem, deps in manifest.items():
-        if ecosystem not in ("node", "python"):
-            continue  # Only npm and PyPI have the metadata we need
-        if isinstance(deps, list):
-            pkgs = []
-            for dep in deps:
-                if isinstance(dep, dict):
-                    name = dep.get("name", "")
-                    version = dep.get("version", "unknown")
-                    if name:
-                        pkgs.append((name, version))
-            if pkgs:
-                result[ecosystem] = pkgs
+    packages = []
+    # package-lock.json format
+    lock_deps = data.get("packages", data.get("dependencies", {}))
+    if isinstance(lock_deps, dict):
+        for name, info in lock_deps.items():
+            clean_name = name.replace("node_modules/", "")
+            if not clean_name:
+                continue
+            version = "unknown"
+            if isinstance(info, dict):
+                version = info.get("version", "unknown")
+            elif isinstance(info, str):
+                version = info
+            packages.append((clean_name, version))
+
+    # package.json format
+    if not packages:
+        for key in ("dependencies", "devDependencies"):
+            deps = data.get(key, {})
+            if isinstance(deps, dict):
+                for name, version in deps.items():
+                    packages.append((name, str(version)))
+
+    return packages
+
+
+def load_manifest() -> dict[str, list[tuple[str, str]]]:
+    """Load manifest and return {ecosystem: [(name, version), ...]}.
+
+    Searches multiple locations for dependency information:
+    1. /opt/deps/dep_manifest.json (primary, written by dependency resolution)
+    2. /opt/target/package.json or package-lock.json (npm fallback)
+    3. /opt/deps/package.json or package-lock.json (npm fallback)
+    """
+    searched_paths = []
+
+    # 1. Primary manifest from dependency resolution
+    searched_paths.append(MANIFEST_PATH)
+    if os.path.isfile(MANIFEST_PATH):
+        try:
+            with open(MANIFEST_PATH) as f:
+                manifest = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            manifest = {}
+
+        result: dict[str, list[tuple[str, str]]] = {}
+        for ecosystem, deps in manifest.items():
+            if ecosystem not in ("node", "python"):
+                continue  # Only npm and PyPI have the metadata we need
+            if isinstance(deps, list):
+                pkgs = []
+                for dep in deps:
+                    if isinstance(dep, dict):
+                        name = dep.get("name", "")
+                        version = dep.get("version", "unknown")
+                        if name:
+                            pkgs.append((name, version))
+                if pkgs:
+                    result[ecosystem] = pkgs
+        if result:
+            return result
+
+    # 2. Fall back to raw manifest files in /opt/target/ and /opt/deps/
+    fallback_paths = [
+        "/opt/target/package-lock.json",
+        "/opt/target/package.json",
+        "/opt/deps/package-lock.json",
+        "/opt/deps/package.json",
+    ]
+
+    result = {}
+    for path in fallback_paths:
+        searched_paths.append(path)
+        if os.path.isfile(path):
+            pkgs = _parse_package_json(path)
+            if pkgs and "node" not in result:
+                result["node"] = pkgs
+
+    # Note: PyPI packages require requirements.txt parsing which is
+    # already handled by the primary manifest.  No simple fallback here.
+
+    if not result:
+        print(f"WARNING: No manifests found. Searched: {', '.join(searched_paths)}")
 
     return result
 
@@ -297,7 +363,13 @@ if __name__ == "__main__":
 
     if total == 0:
         print("No npm/PyPI dependencies found — skipping registry metadata checks")
-        output = {"scanner": "registry-meta", "findings": [], "total": 0, "packages_checked": 0}
+        output = {
+            "scanner": "registry-meta",
+            "findings": [],
+            "total": 0,
+            "packages_checked": 0,
+            "warning": "No dependency manifests found",
+        }
         os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
         with open(OUTPUT_PATH, "w") as f:
             json.dump(output, f, indent=2)

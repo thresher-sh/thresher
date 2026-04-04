@@ -43,8 +43,34 @@ def run_scancode(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
         result = ssh_exec(vm_name, cmd, timeout=600)
         elapsed = time.monotonic() - start
 
+        # ScanCode exit code semantics:
+        #   0 = completed successfully, no issues
+        #   1 = completed with some issues (e.g. individual file timeouts,
+        #       permission errors on specific files).  This is NOT a failure
+        #       — scancode still produces valid output for the files it could
+        #       process.  Treat as success if the output file exists.
+        #   2+ = actual error (bad arguments, crash, etc.)
+        if result.exit_code == 1:
+            logger.info(
+                "ScanCode exited with code 1 (completed with issues). "
+                "stderr: %s",
+                result.stderr[:500] if result.stderr else "(empty)",
+            )
+            # Check if output file was produced — if so, treat as success.
+            size_result = ssh_exec(
+                vm_name,
+                f"stat -c '%s' {output_path} 2>/dev/null || echo 0",
+                timeout=10,
+            )
+            file_size = size_result.stdout.strip()
+            logger.info("ScanCode output file size: %s bytes", file_size)
+
         if result.exit_code not in (0, 1):
-            logger.warning("ScanCode exited with code %d: %s", result.exit_code, result.stderr)
+            logger.warning(
+                "ScanCode exited with code %d: %s",
+                result.exit_code,
+                result.stderr,
+            )
             return ScanResults(
                 tool_name="scancode",
                 execution_time_seconds=elapsed,
