@@ -30,6 +30,7 @@ class TestRunAllScanners:
     @patch("thresher.scanners.entropy.ssh_exec")
     @patch("thresher.scanners.install_hooks.ssh_write_file")
     @patch("thresher.scanners.install_hooks.ssh_exec")
+    @patch("thresher.scanners.guarddog_deps.ssh_write_file")
     @patch("thresher.scanners.guarddog_deps.ssh_exec")
     @patch("thresher.scanners.semgrep_supply_chain.ssh_exec")
     @patch("thresher.scanners.clamav.ssh_exec")
@@ -54,7 +55,7 @@ class TestRunAllScanners:
         mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
         mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
         mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
-        mock_semgrep_sc, mock_guarddog_deps,
+        mock_semgrep_sc, mock_guarddog_deps_exec, mock_guarddog_deps_write,
         mock_install_hooks_exec, mock_install_hooks_write,
         mock_entropy_exec, mock_entropy_write,
         mock_deps_dev_exec, mock_deps_dev_write,
@@ -92,7 +93,8 @@ class TestRunAllScanners:
 
         # New scanners
         mock_semgrep_sc.return_value = SSHResult("", "", 0)
-        mock_guarddog_deps.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps_exec.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps_write.return_value = None
         mock_install_hooks_exec.return_value = SSHResult("", "", 0)
         mock_install_hooks_write.return_value = None
         mock_entropy_exec.return_value = SSHResult("", "", 0)
@@ -133,6 +135,7 @@ class TestRunAllScanners:
     @patch("thresher.scanners.entropy.ssh_exec")
     @patch("thresher.scanners.install_hooks.ssh_write_file")
     @patch("thresher.scanners.install_hooks.ssh_exec")
+    @patch("thresher.scanners.guarddog_deps.ssh_write_file")
     @patch("thresher.scanners.guarddog_deps.ssh_exec")
     @patch("thresher.scanners.semgrep_supply_chain.ssh_exec")
     @patch("thresher.scanners.clamav.ssh_exec")
@@ -157,7 +160,7 @@ class TestRunAllScanners:
         mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
         mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
         mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
-        mock_semgrep_sc, mock_guarddog_deps,
+        mock_semgrep_sc, mock_guarddog_deps_exec, mock_guarddog_deps_write,
         mock_install_hooks_exec, mock_install_hooks_write,
         mock_entropy_exec, mock_entropy_write,
         mock_deps_dev_exec, mock_deps_dev_write,
@@ -188,7 +191,8 @@ class TestRunAllScanners:
 
         # New scanners
         mock_semgrep_sc.return_value = SSHResult("", "", 0)
-        mock_guarddog_deps.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps_exec.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps_write.return_value = None
         mock_install_hooks_exec.return_value = SSHResult("", "", 0)
         mock_install_hooks_write.return_value = None
         mock_entropy_exec.return_value = SSHResult("", "", 0)
@@ -216,6 +220,7 @@ class TestRunAllScanners:
     @patch("thresher.scanners.entropy.ssh_exec")
     @patch("thresher.scanners.install_hooks.ssh_write_file")
     @patch("thresher.scanners.install_hooks.ssh_exec")
+    @patch("thresher.scanners.guarddog_deps.ssh_write_file")
     @patch("thresher.scanners.guarddog_deps.ssh_exec")
     @patch("thresher.scanners.semgrep_supply_chain.ssh_exec")
     @patch("thresher.scanners.clamav.ssh_exec")
@@ -240,7 +245,7 @@ class TestRunAllScanners:
         mock_gl, mock_gd, mock_sg, mock_osv, mock_grype, mock_syft, mock_runner_ssh,
         mock_bandit, mock_checkov, mock_hadolint, mock_trivy, mock_yara,
         mock_capa, mock_govulncheck, mock_cargo_audit, mock_scancode, mock_clamav,
-        mock_semgrep_sc, mock_guarddog_deps,
+        mock_semgrep_sc, mock_guarddog_deps_exec, mock_guarddog_deps_write,
         mock_install_hooks_exec, mock_install_hooks_write,
         mock_entropy_exec, mock_entropy_write,
         mock_deps_dev_exec, mock_deps_dev_write,
@@ -270,7 +275,8 @@ class TestRunAllScanners:
 
         # New scanners
         mock_semgrep_sc.return_value = SSHResult("", "", 0)
-        mock_guarddog_deps.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps_exec.return_value = SSHResult("", "", 0)
+        mock_guarddog_deps_write.return_value = None
         mock_install_hooks_exec.return_value = SSHResult("", "", 0)
         mock_install_hooks_write.return_value = None
         mock_entropy_exec.return_value = SSHResult("", "", 0)

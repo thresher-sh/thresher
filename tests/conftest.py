@@ -232,6 +232,9 @@ def mock_ssh_exec(monkeypatch):
         "thresher.docker.sandbox",
         "thresher.agents.analyst",
         "thresher.agents.adversarial",
+        "thresher.scanners.guarddog_deps",
+        "thresher.scanners.capa_scanner",
+        "thresher.scanners.scancode",
         "thresher.report.synthesize",
     ]:
         try:

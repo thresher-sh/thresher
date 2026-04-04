@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from thresher.scanners.registry_meta import parse_registry_meta_output
+from unittest.mock import patch
+
+from thresher.scanners.registry_meta import (
+    parse_registry_meta_output,
+    run_registry_meta,
+    _REGISTRY_META_SCRIPT,
+)
+from thresher.vm.ssh import SSHResult
 
 
 class TestParseRegistryMetaOutput:
@@ -113,3 +120,59 @@ class TestParseRegistryMetaOutput:
         findings = parse_registry_meta_output(raw)
         assert len(findings) == 2
         assert findings[0].id != findings[1].id
+
+
+class TestRegistryMetaScript:
+    """Tests for the embedded registry metadata scanner script."""
+
+    def test_script_searches_multiple_manifest_paths(self):
+        """The script should search /opt/deps/ and /opt/target/ for manifests."""
+        assert "/opt/deps/dep_manifest.json" in _REGISTRY_META_SCRIPT
+        assert "/opt/target/package-lock.json" in _REGISTRY_META_SCRIPT
+        assert "/opt/target/package.json" in _REGISTRY_META_SCRIPT
+
+    def test_script_logs_searched_paths_on_no_manifests(self):
+        """When no manifests found, script should report searched paths."""
+        assert "WARNING: No manifests found" in _REGISTRY_META_SCRIPT
+
+    def test_script_outputs_warning_field_when_empty(self):
+        """When no packages found, output should include warning field."""
+        assert '"warning"' in _REGISTRY_META_SCRIPT
+
+    def test_script_has_package_json_parser(self):
+        """Script should parse package.json as fallback."""
+        assert "_parse_package_json" in _REGISTRY_META_SCRIPT
+
+
+class TestRunRegistryMeta:
+    @patch("thresher.scanners.registry_meta.ssh_write_file")
+    @patch("thresher.scanners.registry_meta.ssh_exec")
+    def test_success(self, mock_exec, mock_write):
+        mock_exec.return_value = SSHResult("Checking 3 packages...", "", 0)
+        mock_write.return_value = None
+
+        result = run_registry_meta("vm", "/opt/scan-results")
+
+        assert result.tool_name == "registry-meta"
+        assert result.exit_code == 0
+        assert result.raw_output_path == "/opt/scan-results/registry-meta.json"
+
+    @patch("thresher.scanners.registry_meta.ssh_write_file")
+    @patch("thresher.scanners.registry_meta.ssh_exec")
+    def test_failure(self, mock_exec, mock_write):
+        mock_exec.return_value = SSHResult("", "error", 1)
+        mock_write.return_value = None
+
+        result = run_registry_meta("vm", "/opt/scan-results")
+
+        assert result.exit_code == 1
+        assert len(result.errors) > 0
+
+    @patch("thresher.scanners.registry_meta.ssh_write_file")
+    @patch("thresher.scanners.registry_meta.ssh_exec")
+    def test_exception_handled(self, mock_exec, mock_write):
+        mock_write.side_effect = RuntimeError("connection lost")
+
+        result = run_registry_meta("vm", "/opt/scan-results")
+        assert result.exit_code == -1
+        assert len(result.errors) > 0
