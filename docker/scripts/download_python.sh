@@ -24,7 +24,7 @@ download_python() {
     [ ${#req_args[@]} -eq 0 ] && return
 
     echo "Downloading Python dependencies..."
-    pip3 download --no-binary :all: -d "$output_dir" "${req_args[@]}" 2>&1 || {
+    retry_cmd 3 pip3 download --no-binary :all: -d "$output_dir" "${req_args[@]}" || {
         echo "WARNING: Some Python packages failed to download"
     }
 }

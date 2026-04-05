@@ -15,7 +15,7 @@ download_go() {
     # go mod vendor requires a writable copy of the module directory
     cp -r "$target_dir" /tmp/go-project
     cd /tmp/go-project
-    GOMODCACHE=/tmp/gomodcache go mod vendor 2>&1 || {
+    retry_cmd 3 env GOMODCACHE=/tmp/gomodcache go mod vendor || {
         echo "WARNING: go mod vendor failed"
     }
     cp -r /tmp/go-project/vendor/* "$output_dir/" 2>/dev/null || true

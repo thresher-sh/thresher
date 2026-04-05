@@ -15,7 +15,17 @@ download_rust() {
     # cargo vendor requires a writable copy of the project
     cp -r "$target_dir" /tmp/rust-project
     cd /tmp/rust-project
-    cargo vendor "$output_dir" 2>&1 || {
-        echo "WARNING: cargo vendor failed"
-    }
+
+    # Try stable cargo vendor first, fall back to nightly for v4 lockfiles
+    if ! retry_cmd 3 cargo vendor "$output_dir"; then
+        if grep -q '"version"' Cargo.lock 2>/dev/null && \
+           cargo vendor "$output_dir" 2>&1 | grep -q "Znext-lockfile-bump"; then
+            echo "  Lockfile v4 detected, retrying with nightly flag..."
+            retry_cmd 3 cargo -Znext-lockfile-bump vendor "$output_dir" || {
+                echo "WARNING: cargo vendor failed (lockfile v4 incompatible)"
+            }
+        else
+            echo "WARNING: cargo vendor failed"
+        fi
+    fi
 }

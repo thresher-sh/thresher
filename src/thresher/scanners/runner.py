@@ -99,7 +99,8 @@ def run_all_scanners(vm_name: str, config: ScanConfig) -> list[ScanResults]:
 
     logger.info("Running %d scanners in parallel...", len(parallel_tasks))
 
-    with ThreadPoolExecutor(max_workers=len(parallel_tasks)) as executor:
+    max_workers = min(len(parallel_tasks), config.limits.max_concurrent_ssh)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_name = {}
         for name, task_fn in parallel_tasks:
             future = executor.submit(task_fn)

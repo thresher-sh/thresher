@@ -22,6 +22,6 @@ download_node() {
         Object.entries(deps).forEach(([name, ver]) => console.log(name + '@' + ver));
     " | while read -r pkgspec; do
         echo "  Packing ${pkgspec}"
-        npm pack "${pkgspec}" 2>&1 || echo "  WARNING: Failed to pack ${pkgspec}"
+        retry_cmd 3 npm pack "${pkgspec}" || echo "  WARNING: Failed to pack ${pkgspec}"
     done
 }

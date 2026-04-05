@@ -158,6 +158,17 @@ class TestValidateReportStructure:
             validate_report_structure(tmp_path)
         assert "missing expected files" in caplog.text
 
+    def test_report_html_is_known(self, tmp_path, caplog):
+        (tmp_path / "findings.json").write_text("{}")
+        (tmp_path / "executive-summary.md").write_text("")
+        (tmp_path / "detailed-report.md").write_text("")
+        (tmp_path / "report.html").write_text("<html></html>")
+
+        import logging
+        with caplog.at_level(logging.WARNING):
+            validate_report_structure(tmp_path)
+        assert "Unexpected file" not in caplog.text
+
     def test_unexpected_files_logs_warning(self, tmp_path, caplog):
         (tmp_path / "findings.json").write_text("{}")
         (tmp_path / "executive-summary.md").write_text("")

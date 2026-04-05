@@ -181,6 +181,7 @@ def validate_report_structure(report_dir: Path) -> None:
         "synthesis-findings.md",
         "sbom.json",
         "synthesis_input.md",
+        "report.html",
     }
 
     for f in present:

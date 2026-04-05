@@ -10,6 +10,29 @@ MANIFEST="${DEPS_DIR}/dep_manifest.json"
 
 mkdir -p "$DEPS_DIR"
 
+# ── Retry Helper ───────────────────────────────────────────────────
+# retry_cmd MAX_RETRIES COMMAND [ARGS...]
+# Retries a command with exponential backoff (2s, 4s, 8s, ...).
+# Returns 0 on success, or the last exit code after all retries fail.
+retry_cmd() {
+    local max_retries="$1"; shift
+    local delay=2
+    local attempt=0
+    while [ $attempt -lt "$max_retries" ]; do
+        if "$@" 2>&1; then
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        if [ $attempt -lt "$max_retries" ]; then
+            echo "  Retry $attempt/$max_retries in ${delay}s..."
+            sleep $delay
+            delay=$((delay * 2))
+        fi
+    done
+    return 1
+}
+export -f retry_cmd
+
 # ── Ecosystem Detection ─────────────────────────────────────────────
 source /scripts/detect.sh
 detect_ecosystems "$TARGET_DIR"

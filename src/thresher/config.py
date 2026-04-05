@@ -55,6 +55,7 @@ class LimitsConfig:
     max_file_size_mb: int = 50       # Max individual file in report copy (MB)
     max_copy_size_mb: int = 500      # Max total size of report copy (MB)
     max_stdout_mb: int = 50          # Max stdout from ssh_exec before kill (MB)
+    max_concurrent_ssh: int = 8      # Max parallel SSH sessions to VM
 
     @property
     def max_json_size_bytes(self) -> int:
@@ -171,6 +172,8 @@ def load_config(
             config.limits.max_copy_size_mb = limits_data["max_copy_size_mb"]
         if "max_stdout_mb" in limits_data:
             config.limits.max_stdout_mb = limits_data["max_stdout_mb"]
+        if "max_concurrent_ssh" in limits_data:
+            config.limits.max_concurrent_ssh = limits_data["max_concurrent_ssh"]
         analysts_data = data.get("analysts", {})
         if "max_turns" in analysts_data:
             config.analyst_max_turns = analysts_data["max_turns"]
@@ -209,6 +212,10 @@ def load_config(
     # Publish limits so utility modules can read them
     global active_limits
     active_limits = config.limits
+
+    # Initialise SSH concurrency limit from config
+    from thresher.vm.ssh import _init_ssh_semaphore
+    _init_ssh_semaphore(config.limits.max_concurrent_ssh)
 
     return config
 

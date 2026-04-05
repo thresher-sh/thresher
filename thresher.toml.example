@@ -49,3 +49,4 @@ disk = 30    # GB
 # max_file_size_mb = 50    # Max individual file in report copy (MB)
 # max_copy_size_mb = 500   # Max total size of report copy (MB)
 # max_stdout_mb = 50       # Max stdout from VM before kill (MB)
+# max_concurrent_ssh = 8   # Max parallel SSH sessions to VM

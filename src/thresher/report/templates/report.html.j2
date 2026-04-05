@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Thresher — {{ repo_url }} Security Scan Report</title>
+<link rel="icon" type="image/png" href="favicon-purple-black.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root {
     --deep-black: #0a0a0a;
@@ -52,13 +55,14 @@
     justify-content: space-between;
   }
 
-  .nav-brand {
+  .nav-back {
     font-family: var(--mono);
     font-size: 13px;
-    color: var(--violet);
-    font-weight: 700;
-    letter-spacing: 1px;
+    color: var(--steel);
+    text-decoration: none;
+    transition: color 0.15s;
   }
+  .nav-back:hover { color: var(--arctic); }
 
   .nav-links {
     display: flex;
@@ -616,6 +620,110 @@
     color: var(--violet);
   }
 
+  /* -- CTA Footer ------------------------------------------ */
+  .cta-section {
+    text-align: center;
+    padding: 80px 24px;
+    border-top: 1px solid var(--charcoal);
+    position: relative;
+  }
+
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 300px;
+    background: radial-gradient(ellipse, var(--violet-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-ascii {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.25;
+    color: var(--violet);
+    white-space: pre;
+    margin-bottom: 32px;
+    opacity: 0.5;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cta-section h2 {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--arctic);
+    margin-bottom: 32px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .install-box {
+    background: var(--terminal-black);
+    border: 1px solid var(--violet);
+    border-radius: 8px;
+    padding: 20px 40px;
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: box-shadow 0.3s, border-color 0.3s;
+    position: relative;
+    z-index: 1;
+  }
+
+  .install-box:hover {
+    box-shadow: 0 0 40px var(--violet-glow), 0 0 80px rgba(167, 139, 250, 0.05);
+  }
+
+  .install-box .prompt { color: var(--steel); user-select: none; }
+  .install-box .cmd {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--arctic);
+  }
+  .install-box .cmd .domain { color: var(--violet); }
+
+  .copy-tooltip {
+    position: absolute;
+    right: -80px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--violet);
+    color: var(--deep-black);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 5px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, transform 0.15s;
+    transform: translateY(-50%) translateX(4px);
+  }
+
+  .copy-tooltip::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: var(--violet);
+    border-left: 0;
+  }
+
+  .copy-tooltip.show {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+
   footer {
     border-top: 1px solid var(--charcoal);
     padding: 40px 24px;
@@ -623,6 +731,13 @@
     color: var(--steel);
     font-size: 12px;
   }
+
+  footer a {
+    color: var(--arctic);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  footer a:hover { color: var(--violet); }
 
   /* -- Scrollbar ------------------------------------------- */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -643,6 +758,26 @@
     .upgrade-table { font-size: 12px; }
     .upgrade-table thead th,
     .upgrade-table tbody td { padding: 8px 6px; }
+    .install-box { padding: 16px 20px; }
+    .install-box .cmd { font-size: 13px; }
+    .copy-tooltip {
+      right: auto;
+      left: 50%;
+      top: -36px;
+      transform: translateX(-50%);
+    }
+    .copy-tooltip::before {
+      left: 50%;
+      top: auto;
+      bottom: -5px;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--violet);
+      border-bottom: 0;
+    }
+    .copy-tooltip.show {
+      transform: translateX(-50%) translateY(0);
+    }
   }
 
   @media (max-width: 480px) {
@@ -661,13 +796,16 @@
 
 <!-- Nav -->
 <nav>
-  <span class="nav-brand">THRESHER</span>
+  <a href="https://thresher.sh" class="nav-back">&larr; Back to thresher.sh</a>
   <ul class="nav-links">
     <li><a href="#executive-summary">Summary</a></li>
     <li><a href="#scanner-findings">Scanners</a></li>
     <li><a href="#ai-findings">AI Findings</a></li>
     <li><a href="#upgrades">Upgrades</a></li>
-    <li><a href="#pipeline">Pipeline</a></li>
+    {% if fix_metadata and fix_metadata.get("title") %}
+    <li><a href="#fixed">What Was Fixed</a></li>
+    {% endif %}
+    <li><a href="https://github.com/thresher-sh/thresher">GitHub</a></li>
   </ul>
 </nav>
 
@@ -1018,13 +1156,51 @@
   </div>
 </details>
 
-</div>
+</div><!-- end container -->
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="cta-ascii">                     _/|
+              ______/  |
+        _____/  __     |
+    ___/   \__/  \    /
+   /    _     \__/
+  | __-~ \--~
+   \/</div>
+
+  <h2>Run this on your own dependencies.</h2>
+
+  <div class="install-box" onclick="copyCmd(this)" style="margin: 0 auto;">
+    <span class="prompt">$</span>
+    <span class="cmd">brew tap thresher-sh/thresher && brew install <span class="domain">thresher</span></span>
+    <span class="copy-tooltip">copied!</span>
+  </div>
+</section>
 
 <!-- Footer -->
 <footer>
-  <p>Generated by Thresher v{{ thresher_version }} &middot; {{ scan_date }}</p>
-  <p style="margin-top: 8px; color: var(--steel);">This report is generated by automated tools and AI analysis. Findings should be verified by a qualified security professional before making deployment decisions.</p>
+  <p style="margin-bottom: 16px;">
+    <a href="https://github.com/thresher-sh/thresher">GitHub</a> &middot;
+    <a href="https://github.com/thresher-sh/thresher/tree/main/documentation">Docs</a> &middot;
+    <a href="https://discord.gg/VVt9qmkcnr">Discord</a> &middot;
+    <a href="https://thresher.sh">thresher.sh</a>
+  </p>
+  <p style="max-width: 680px; margin: 0 auto; color: var(--steel); font-size: 11px; line-height: 1.6;">
+    <strong>Disclaimer:</strong> Thresher is provided &ldquo;as is&rdquo; without warranty of any kind. It does not guarantee detection of all vulnerabilities, malicious code, or supply chain threats. Results should not be treated as a substitute for professional security audits. Use at your own risk.
+  </p>
 </footer>
+
+<script>
+function copyCmd(el) {
+  var cmd = 'brew tap thresher-sh/thresher && brew install thresher';
+  navigator.clipboard.writeText(cmd).then(function() {
+    var tip = el.querySelector('.copy-tooltip');
+    if (!tip) return;
+    tip.classList.add('show');
+    setTimeout(function() { tip.classList.remove('show'); }, 1500);
+  });
+}
+</script>
 
 </body>
 </html>
