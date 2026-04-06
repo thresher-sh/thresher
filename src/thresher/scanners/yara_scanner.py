@@ -3,25 +3,27 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
 
+YARA_RULES_DIR = "/opt/yara-rules"
 
-def run_yara(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
+
+def run_yara(target_dir: str, output_dir: str) -> ScanResults:
     """Run YARA rules against the target directory to detect malware patterns.
 
     Scans using key rule categories from /opt/yara-rules.  If the rules
     directory does not exist, returns empty results with a warning.
 
     Args:
-        vm_name: Name of the Lima VM.
-        target_dir: Path to the repository inside the VM.
-        output_dir: Directory for scan artifacts inside the VM.
+        target_dir: Path to the repository.
+        output_dir: Directory for scan artifacts.
 
     Returns:
         ScanResults with parsed Finding objects.
@@ -31,8 +33,7 @@ def run_yara(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
     start = time.monotonic()
     try:
         # Check if YARA rules directory exists.
-        check_result = ssh_exec(vm_name, "[ -d /opt/yara-rules ] && echo exists")
-        if "exists" not in check_result.stdout:
+        if not Path(YARA_RULES_DIR).is_dir():
             elapsed = time.monotonic() - start
             logger.warning("YARA rules directory /opt/yara-rules not found")
             return ScanResults(
@@ -42,25 +43,34 @@ def run_yara(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
                 findings=[],
             )
 
-        # Run YARA with key rule categories, suppressing errors from
-        # individual rule files that fail to compile.
-        # Exclude .git directory to avoid false positives on hook samples.
-        cmd = (
-            f"for f in /opt/yara-rules/malware/MALW_*.yar "
-            f"/opt/yara-rules/packers/*.yar; do "
-            f"yara -r \"$f\" {target_dir} 2>/dev/null | grep -v '/.git/'; "
-            f"done > {output_path}"
-        )
+        # Gather rule files to scan.
+        malw_rules = sorted(Path(YARA_RULES_DIR, "malware").glob("MALW_*.yar"))
+        packer_rules = sorted(Path(YARA_RULES_DIR, "packers").glob("*.yar"))
+        rule_files = malw_rules + packer_rules
 
-        result = ssh_exec(vm_name, cmd, timeout=600)
+        all_output_lines: list[str] = []
+        last_exit_code = 0
+
+        for rule_file in rule_files:
+            result = subprocess.run(
+                ["yara", "-r", str(rule_file), target_dir],
+                capture_output=True,
+                timeout=600,
+            )
+            last_exit_code = result.returncode
+            # Filter out .git matches to avoid false positives on hook samples.
+            for line in result.stdout.decode(errors="replace").splitlines():
+                if "/.git/" not in line:
+                    all_output_lines.append(line)
+
+        output_text = "\n".join(all_output_lines)
+        Path(output_path).write_text(output_text)
         elapsed = time.monotonic() - start
 
-        # Findings remain inside the VM at output_path.
-        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="yara",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=last_exit_code,
             raw_output_path=output_path,
         )
 

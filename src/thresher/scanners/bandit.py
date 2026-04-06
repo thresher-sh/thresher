@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
 
@@ -18,44 +19,45 @@ _SEVERITY_MAP: dict[str, str] = {
 }
 
 
-def run_bandit(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
+def run_bandit(target_dir: str, output_dir: str) -> ScanResults:
     """Run Bandit to detect security issues in Python code.
 
     Bandit exits with code 0 when no issues are found and code 1 when
     issues are detected.  Both are valid scan results.
 
     Args:
-        vm_name: Name of the Lima VM.
-        target_dir: Path to the repository inside the VM.
-        output_dir: Directory for scan artifacts inside the VM.
+        target_dir: Path to the repository.
+        output_dir: Directory for scan artifacts.
 
     Returns:
         ScanResults with parsed Finding objects.
     """
     output_path = f"{output_dir}/bandit.json"
-    cmd = f"bandit -r {target_dir} -f json -o {output_path} 2>/dev/null"
 
     start = time.monotonic()
     try:
-        result = ssh_exec(vm_name, cmd)
+        result = subprocess.run(
+            ["bandit", "-r", target_dir, "-f", "json"],
+            capture_output=True,
+            timeout=300,
+        )
+        Path(output_path).write_bytes(result.stdout)
         elapsed = time.monotonic() - start
 
         # Exit 0 = no issues, 1 = issues found.  Other codes are errors.
-        if result.exit_code not in (0, 1):
-            logger.warning("Bandit exited with code %d: %s", result.exit_code, result.stderr)
+        if result.returncode not in (0, 1):
+            logger.warning("Bandit exited with code %d: %s", result.returncode, result.stderr.decode())
             return ScanResults(
                 tool_name="bandit",
                 execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                errors=[f"Bandit failed (exit {result.exit_code}): {result.stderr}"],
+                exit_code=result.returncode,
+                errors=[f"Bandit failed (exit {result.returncode}): {result.stderr.decode()}"],
             )
 
-        # Findings remain inside the VM at output_path.
-        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="bandit",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=result.returncode,
             raw_output_path=output_path,
         )
 

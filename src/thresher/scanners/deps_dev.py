@@ -6,17 +6,20 @@ Queries the deps.dev API for each dependency to get:
 - Version history anomalies (dormant packages suddenly active)
 - Maintainer count (single-maintainer risk)
 
-Runs as a self-contained Python script inside the VM.
+Runs as a self-contained Python script via subprocess.
 """
 
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
+import tempfile
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec, ssh_write_file
 
 logger = logging.getLogger(__name__)
 
@@ -389,43 +392,50 @@ if __name__ == "__main__":
 '''
 
 
-def run_deps_dev(vm_name: str, output_dir: str) -> ScanResults:
-    """Run deps.dev metadata checks inside the VM.
+def run_deps_dev(output_dir: str) -> ScanResults:
+    """Run deps.dev metadata checks via subprocess.
 
     Args:
-        vm_name: Name of the Lima VM.
-        output_dir: Directory for scan artifacts inside the VM.
+        output_dir: Directory for scan artifacts.
 
     Returns:
-        ScanResults with execution metadata only (findings stay in VM).
+        ScanResults with execution metadata only.
     """
-    script_path = "/tmp/deps_dev_scanner.py"
+    output_path = f"{output_dir}/deps-dev.json"
+    script_path = ""
 
     start = time.monotonic()
     try:
-        ssh_write_file(vm_name, _DEPS_DEV_SCRIPT, script_path)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, prefix="deps_dev_scanner_"
+        ) as f:
+            f.write(_DEPS_DEV_SCRIPT)
+            script_path = f.name
 
-        result = ssh_exec(vm_name, f"python3 {script_path}", timeout=600)
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            timeout=600,
+        )
         elapsed = time.monotonic() - start
 
-        output_path = f"{output_dir}/deps-dev.json"
-
-        if result.exit_code != 0:
+        if result.returncode != 0:
             logger.warning(
                 "deps.dev scanner exited with code %d: %s",
-                result.exit_code, result.stderr,
+                result.returncode,
+                result.stderr.decode(),
             )
             return ScanResults(
                 tool_name="deps-dev",
                 execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                errors=[f"deps.dev scanner failed (exit {result.exit_code}): {result.stderr}"],
+                exit_code=result.returncode,
+                errors=[f"deps.dev scanner failed (exit {result.returncode}): {result.stderr.decode()}"],
             )
 
         return ScanResults(
             tool_name="deps-dev",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=result.returncode,
             raw_output_path=output_path,
         )
 
@@ -438,6 +448,12 @@ def run_deps_dev(vm_name: str, output_dir: str) -> ScanResults:
             exit_code=-1,
             errors=[f"deps.dev scanner error: {exc}"],
         )
+    finally:
+        if script_path:
+            try:
+                Path(script_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def parse_deps_dev_output(raw: dict[str, Any]) -> list[Finding]:

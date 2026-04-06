@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
 
@@ -20,44 +21,45 @@ _SEVERITY_MAP: dict[str, str] = {
 }
 
 
-def run_osv(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
+def run_osv(target_dir: str, output_dir: str) -> ScanResults:
     """Run OSV-Scanner against the target directory.
 
     OSV-Scanner exits with code 0 when no vulnerabilities are found and
     code 1 when vulnerabilities are present.  Both are valid results.
 
     Args:
-        vm_name: Name of the Lima VM.
-        target_dir: Path to the repository inside the VM.
-        output_dir: Directory for scan artifacts inside the VM.
+        target_dir: Path to the repository.
+        output_dir: Directory for scan artifacts.
 
     Returns:
-        ScanResults with execution metadata only (findings stay in VM).
+        ScanResults with execution metadata only (findings stay in output_dir).
     """
     output_path = f"{output_dir}/osv.json"
-    cmd = f"osv-scanner scan --format json {target_dir} > {output_path} 2>/dev/null"
 
     start = time.monotonic()
     try:
-        result = ssh_exec(vm_name, cmd)
+        result = subprocess.run(
+            ["osv-scanner", "scan", "--format", "json", target_dir],
+            capture_output=True,
+            timeout=300,
+        )
+        Path(output_path).write_bytes(result.stdout)
         elapsed = time.monotonic() - start
 
         # Exit 0 = clean, 1 = vulns found (expected).  Other codes are errors.
-        if result.exit_code not in (0, 1):
-            logger.warning("OSV-Scanner exited with code %d: %s", result.exit_code, result.stderr)
+        if result.returncode not in (0, 1):
+            logger.warning("OSV-Scanner exited with code %d: %s", result.returncode, result.stderr.decode())
             return ScanResults(
                 tool_name="osv-scanner",
                 execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                errors=[f"OSV-Scanner failed (exit {result.exit_code}): {result.stderr}"],
+                exit_code=result.returncode,
+                errors=[f"OSV-Scanner failed (exit {result.returncode}): {result.stderr.decode()}"],
             )
 
-        # Findings remain inside the VM at output_path.
-        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="osv-scanner",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=result.returncode,
             raw_output_path=output_path,
         )
 

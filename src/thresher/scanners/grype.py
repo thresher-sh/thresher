@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
 
@@ -22,45 +23,46 @@ _SEVERITY_MAP: dict[str, str] = {
 }
 
 
-def run_grype(vm_name: str, sbom_path: str, output_dir: str) -> ScanResults:
+def run_grype(sbom_path: str, output_dir: str) -> ScanResults:
     """Run Grype against a CycloneDX SBOM produced by Syft.
 
     Grype exits with code 0 when no vulnerabilities are found and code 1
     when vulnerabilities *are* found.  Both are treated as successful runs.
 
     Args:
-        vm_name: Name of the Lima VM.
-        sbom_path: Path to the SBOM JSON inside the VM.
-        output_dir: Directory for scan artifacts inside the VM.
+        sbom_path: Path to the SBOM JSON.
+        output_dir: Directory for scan artifacts.
 
     Returns:
-        ScanResults with execution metadata only (findings stay in VM).
+        ScanResults with execution metadata only (findings stay in output_dir).
     """
     output_path = f"{output_dir}/grype.json"
-    cmd = f"grype sbom:{sbom_path} -o json > {output_path}"
 
     start = time.monotonic()
     try:
-        result = ssh_exec(vm_name, cmd)
+        result = subprocess.run(
+            ["grype", f"sbom:{sbom_path}", "-o", "json"],
+            capture_output=True,
+            timeout=300,
+        )
+        Path(output_path).write_bytes(result.stdout)
         elapsed = time.monotonic() - start
 
         # Exit codes: 0 = no vulns, 1 = vulns found (not an error).
         # Anything else is a real failure.
-        if result.exit_code not in (0, 1):
-            logger.warning("Grype exited with code %d: %s", result.exit_code, result.stderr)
+        if result.returncode not in (0, 1):
+            logger.warning("Grype exited with code %d: %s", result.returncode, result.stderr.decode())
             return ScanResults(
                 tool_name="grype",
                 execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                errors=[f"Grype failed (exit {result.exit_code}): {result.stderr}"],
+                exit_code=result.returncode,
+                errors=[f"Grype failed (exit {result.returncode}): {result.stderr.decode()}"],
             )
 
-        # Findings remain inside the VM at output_path.
-        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="grype",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=result.returncode,
             raw_output_path=output_path,
         )
 

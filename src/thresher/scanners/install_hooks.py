@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
+import tempfile
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec, ssh_write_file
 
 logger = logging.getLogger(__name__)
 
-# Self-contained Python script that runs INSIDE the VM.
+# Self-contained Python script that runs as a subprocess.
 _INSTALL_HOOKS_SCRIPT = r'''#!/usr/bin/env python3
 """Scan dependency manifests for install hooks.
 
@@ -177,53 +180,56 @@ if __name__ == "__main__":
 '''
 
 
-def run_install_hooks(vm_name: str, output_dir: str) -> ScanResults:
-    """Run install hook analysis inside the VM.
+def run_install_hooks(output_dir: str) -> ScanResults:
+    """Run install hook analysis.
 
-    Copies the analysis script into the VM, executes it, and returns
-    metadata only. All findings data stays in the VM.
+    Writes the analysis script to a temp file, executes it, and returns
+    metadata only.
 
     Args:
-        vm_name: Name of the Lima VM.
-        output_dir: Directory for scan artifacts inside the VM.
+        output_dir: Directory for scan artifacts.
 
     Returns:
-        ScanResults with execution metadata only (findings stay in VM).
+        ScanResults with execution metadata only.
     """
-    script_remote_path = "/tmp/install_hooks_scanner.py"
+    output_path = f"{output_dir}/install-hooks.json"
+    script_path = ""
 
     start = time.monotonic()
     try:
-        # Copy the script into the VM
-        ssh_write_file(vm_name, _INSTALL_HOOKS_SCRIPT, script_remote_path)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, prefix="install_hooks_scanner_"
+        ) as f:
+            f.write(_INSTALL_HOOKS_SCRIPT)
+            script_path = f.name
 
-        # Execute it
-        cmd = f"python3 {script_remote_path}"
-        result = ssh_exec(vm_name, cmd, timeout=300)
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            timeout=300,
+        )
         elapsed = time.monotonic() - start
 
-        output_path = f"{output_dir}/install-hooks.json"
-
-        if result.exit_code != 0:
+        if result.returncode != 0:
             logger.warning(
                 "Install hooks scanner exited with code %d: %s",
-                result.exit_code,
-                result.stderr,
+                result.returncode,
+                result.stderr.decode(),
             )
             return ScanResults(
                 tool_name="install-hooks",
                 execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
+                exit_code=result.returncode,
                 errors=[
-                    f"Install hooks scanner failed (exit {result.exit_code}): "
-                    f"{result.stderr}"
+                    f"Install hooks scanner failed (exit {result.returncode}): "
+                    f"{result.stderr.decode()}"
                 ],
             )
 
         return ScanResults(
             tool_name="install-hooks",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=result.returncode,
             raw_output_path=output_path,
         )
 
@@ -236,6 +242,12 @@ def run_install_hooks(vm_name: str, output_dir: str) -> ScanResults:
             exit_code=-1,
             errors=[f"Install hooks scanner execution error: {exc}"],
         )
+    finally:
+        if script_path:
+            try:
+                Path(script_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def parse_install_hooks_output(raw: dict[str, Any]) -> list[Finding]:

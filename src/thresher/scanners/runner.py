@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Callable
 
 from thresher.config import ScanConfig
@@ -30,7 +31,6 @@ from thresher.scanners.semgrep_supply_chain import run_semgrep_supply_chain
 from thresher.scanners.syft import run_syft
 from thresher.scanners.trivy import run_trivy
 from thresher.scanners.yara_scanner import run_yara
-from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
 
@@ -38,68 +38,67 @@ TARGET_DIR = "/opt/target"
 OUTPUT_DIR = "/opt/scan-results"
 
 
-def run_all_scanners(vm_name: str, config: ScanConfig) -> list[ScanResults]:
-    """Run all configured scanners against the target repo inside the VM.
+def run_all_scanners(target_dir: str, output_dir: str, config: ScanConfig) -> list[ScanResults]:
+    """Run all configured scanners against the target repo.
 
-    Scanner findings remain inside the VM at /opt/scan-results/.  Only
-    execution metadata (tool name, exit code, timing, errors) is returned
-    to the host.  This preserves the VM trust boundary -- no scan data
-    crosses until the final report copy.
+    Scanner findings are written to output_dir.  Only execution metadata
+    (tool name, exit code, timing, errors) is returned.
 
     Execution order:
       1. Syft runs first to produce the SBOM (required by Grype).
       2. All other scanners run in parallel.
 
     Args:
-        vm_name: Name of the Lima VM containing the cloned repository.
+        target_dir: Path to the cloned repository.
+        output_dir: Directory where scan artifacts are written.
         config: Scan configuration.
 
     Returns:
         List of ScanResults with execution metadata only (no findings).
     """
-    # Ensure the output directory exists inside the VM.
-    ssh_exec(vm_name, f"mkdir -p {OUTPUT_DIR}")
+    # Ensure the output directory exists.
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     all_results: list[ScanResults] = []
 
     # --- Phase 1: SBOM generation (must complete before Grype) ---
     logger.info("Running Syft for SBOM generation...")
-    syft_results = run_syft(vm_name, TARGET_DIR, OUTPUT_DIR)
+    syft_results = run_syft(target_dir, output_dir)
     all_results.append(syft_results)
 
     if syft_results.errors:
         logger.warning("Syft encountered errors: %s", syft_results.errors)
 
-    sbom_path = syft_results.metadata.get("sbom_path", f"{OUTPUT_DIR}/sbom.json")
+    sbom_path = syft_results.metadata.get("sbom_path", f"{output_dir}/sbom.json")
 
     # --- Phase 2: All other scanners in parallel ---
     parallel_tasks: list[tuple[str, Callable[[], ScanResults]]] = [
-        ("grype", lambda: run_grype(vm_name, sbom_path, OUTPUT_DIR)),
-        ("osv-scanner", lambda: run_osv(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("semgrep", lambda: run_semgrep(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("guarddog", lambda: run_guarddog(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("gitleaks", lambda: run_gitleaks(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("bandit", lambda: run_bandit(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("checkov", lambda: run_checkov(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("hadolint", lambda: run_hadolint(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("trivy", lambda: run_trivy(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("yara", lambda: run_yara(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("capa", lambda: run_capa(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("govulncheck", lambda: run_govulncheck(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("cargo-audit", lambda: run_cargo_audit(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("scancode", lambda: run_scancode(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("clamav", lambda: run_clamav(vm_name, TARGET_DIR, OUTPUT_DIR)),
-        ("semgrep-supply-chain", lambda: run_semgrep_supply_chain(vm_name, OUTPUT_DIR)),
-        ("guarddog-deps", lambda: run_guarddog_deps(vm_name, OUTPUT_DIR)),
-        ("install-hooks", lambda: run_install_hooks(vm_name, OUTPUT_DIR)),
-        ("entropy", lambda: run_entropy(vm_name, OUTPUT_DIR)),
-        ("deps-dev", lambda: run_deps_dev(vm_name, OUTPUT_DIR)),
-        ("registry-meta", lambda: run_registry_meta(vm_name, OUTPUT_DIR)),
+        ("grype", lambda: run_grype(sbom_path, output_dir)),
+        ("osv-scanner", lambda: run_osv(target_dir, output_dir)),
+        ("semgrep", lambda: run_semgrep(target_dir, output_dir)),
+        ("guarddog", lambda: run_guarddog(target_dir, output_dir)),
+        ("gitleaks", lambda: run_gitleaks(target_dir, output_dir)),
+        ("bandit", lambda: run_bandit(target_dir, output_dir)),
+        ("checkov", lambda: run_checkov(target_dir, output_dir)),
+        ("hadolint", lambda: run_hadolint(target_dir, output_dir)),
+        ("trivy", lambda: run_trivy(target_dir, output_dir)),
+        ("yara", lambda: run_yara(target_dir, output_dir)),
+        ("capa", lambda: run_capa(target_dir, output_dir)),
+        ("govulncheck", lambda: run_govulncheck(target_dir, output_dir)),
+        ("cargo-audit", lambda: run_cargo_audit(target_dir, output_dir)),
+        ("scancode", lambda: run_scancode(target_dir, output_dir)),
+        ("clamav", lambda: run_clamav(target_dir, output_dir)),
+        ("semgrep-supply-chain", lambda: run_semgrep_supply_chain(output_dir)),
+        ("guarddog-deps", lambda: run_guarddog_deps(output_dir)),
+        ("install-hooks", lambda: run_install_hooks(output_dir)),
+        ("entropy", lambda: run_entropy(output_dir)),
+        ("deps-dev", lambda: run_deps_dev(output_dir)),
+        ("registry-meta", lambda: run_registry_meta(output_dir)),
     ]
 
     logger.info("Running %d scanners in parallel...", len(parallel_tasks))
 
-    max_workers = min(len(parallel_tasks), config.limits.max_concurrent_ssh)
+    max_workers = min(len(parallel_tasks), getattr(config.limits, "max_concurrent_scans", 10))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_name = {}
         for name, task_fn in parallel_tasks:

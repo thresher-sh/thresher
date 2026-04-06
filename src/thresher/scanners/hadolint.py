@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
 
@@ -19,16 +20,15 @@ _LEVEL_MAP: dict[str, str] = {
 }
 
 
-def run_hadolint(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
+def run_hadolint(target_dir: str, output_dir: str) -> ScanResults:
     """Run Hadolint to lint Dockerfiles in the target directory.
 
     First finds all Dockerfiles, then runs Hadolint on each.  If no
     Dockerfiles are found, returns empty results.
 
     Args:
-        vm_name: Name of the Lima VM.
-        target_dir: Path to the repository inside the VM.
-        output_dir: Directory for scan artifacts inside the VM.
+        target_dir: Path to the repository.
+        output_dir: Directory for scan artifacts.
 
     Returns:
         ScanResults with parsed Finding objects.
@@ -38,17 +38,12 @@ def run_hadolint(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
     start = time.monotonic()
     try:
         # Find Dockerfiles in the target directory.
-        find_result = ssh_exec(
-            vm_name,
-            f'find {target_dir} -name "Dockerfile*" -not -path "*/.git/*" 2>/dev/null',
-        )
-        elapsed = time.monotonic() - start
-
         dockerfiles = [
-            line.strip()
-            for line in find_result.stdout.strip().splitlines()
-            if line.strip()
+            str(p)
+            for p in Path(target_dir).rglob("Dockerfile*")
+            if ".git" not in p.parts
         ]
+        elapsed = time.monotonic() - start
 
         if not dockerfiles:
             logger.info("No Dockerfiles found, skipping Hadolint")
@@ -60,28 +55,28 @@ def run_hadolint(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
             )
 
         # Run Hadolint on all discovered Dockerfiles.
-        dockerfile_paths = " ".join(dockerfiles)
-        cmd = f"hadolint --format json {dockerfile_paths} > {output_path} 2>/dev/null"
-
-        result = ssh_exec(vm_name, cmd)
+        result = subprocess.run(
+            ["hadolint", "--format", "json"] + dockerfiles,
+            capture_output=True,
+            timeout=300,
+        )
+        Path(output_path).write_bytes(result.stdout)
         elapsed = time.monotonic() - start
 
         # Hadolint exits 0 = no issues, 1 = issues found.
-        if result.exit_code not in (0, 1):
-            logger.warning("Hadolint exited with code %d: %s", result.exit_code, result.stderr)
+        if result.returncode not in (0, 1):
+            logger.warning("Hadolint exited with code %d: %s", result.returncode, result.stderr.decode())
             return ScanResults(
                 tool_name="hadolint",
                 execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                errors=[f"Hadolint failed (exit {result.exit_code}): {result.stderr}"],
+                exit_code=result.returncode,
+                errors=[f"Hadolint failed (exit {result.returncode}): {result.stderr.decode()}"],
             )
 
-        # Findings remain inside the VM at output_path.
-        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="hadolint",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=result.returncode,
             raw_output_path=output_path,
         )
 

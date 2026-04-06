@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from thresher.scanners.registry_meta import (
     parse_registry_meta_output,
     run_registry_meta,
     _REGISTRY_META_SCRIPT,
 )
-from thresher.vm.ssh import SSHResult
 
 
 class TestParseRegistryMetaOutput:
@@ -145,34 +144,37 @@ class TestRegistryMetaScript:
 
 
 class TestRunRegistryMeta:
-    @patch("thresher.scanners.registry_meta.ssh_write_file")
-    @patch("thresher.scanners.registry_meta.ssh_exec")
-    def test_success(self, mock_exec, mock_write):
-        mock_exec.return_value = SSHResult("Checking 3 packages...", "", 0)
-        mock_write.return_value = None
+    @patch("thresher.scanners.registry_meta.subprocess.run")
+    def test_success(self, mock_run):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = b"Checking 3 packages..."
+        mock_result.stderr = b""
+        mock_run.return_value = mock_result
 
-        result = run_registry_meta("vm", "/opt/scan-results")
+        result = run_registry_meta("/opt/scan-results")
 
         assert result.tool_name == "registry-meta"
         assert result.exit_code == 0
         assert result.raw_output_path == "/opt/scan-results/registry-meta.json"
 
-    @patch("thresher.scanners.registry_meta.ssh_write_file")
-    @patch("thresher.scanners.registry_meta.ssh_exec")
-    def test_failure(self, mock_exec, mock_write):
-        mock_exec.return_value = SSHResult("", "error", 1)
-        mock_write.return_value = None
+    @patch("thresher.scanners.registry_meta.subprocess.run")
+    def test_failure(self, mock_run):
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = b""
+        mock_result.stderr = b"error"
+        mock_run.return_value = mock_result
 
-        result = run_registry_meta("vm", "/opt/scan-results")
+        result = run_registry_meta("/opt/scan-results")
 
         assert result.exit_code == 1
         assert len(result.errors) > 0
 
-    @patch("thresher.scanners.registry_meta.ssh_write_file")
-    @patch("thresher.scanners.registry_meta.ssh_exec")
-    def test_exception_handled(self, mock_exec, mock_write):
-        mock_write.side_effect = RuntimeError("connection lost")
+    @patch("thresher.scanners.registry_meta.subprocess.run")
+    def test_exception_handled(self, mock_run):
+        mock_run.side_effect = RuntimeError("connection lost")
 
-        result = run_registry_meta("vm", "/opt/scan-results")
+        result = run_registry_meta("/opt/scan-results")
         assert result.exit_code == -1
         assert len(result.errors) > 0

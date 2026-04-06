@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 import os
 import textwrap
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from thresher.scanners.deps_dev import parse_deps_dev_output, run_deps_dev, _DEPS_DEV_SCRIPT
-from thresher.vm.ssh import SSHResult
 
 
 class TestParseDepsDevOutput:
@@ -133,25 +132,29 @@ class TestDepsDevScript:
 
 
 class TestRunDepsDev:
-    @patch("thresher.scanners.deps_dev.ssh_write_file")
-    @patch("thresher.scanners.deps_dev.ssh_exec")
-    def test_success(self, mock_exec, mock_write):
-        mock_exec.return_value = SSHResult("Checking 5 packages...", "", 0)
-        mock_write.return_value = None
+    @patch("thresher.scanners.deps_dev.subprocess.run")
+    def test_success(self, mock_run):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = b"Checking 5 packages..."
+        mock_result.stderr = b""
+        mock_run.return_value = mock_result
 
-        result = run_deps_dev("vm", "/opt/scan-results")
+        result = run_deps_dev("/opt/scan-results")
 
         assert result.tool_name == "deps-dev"
         assert result.exit_code == 0
         assert result.raw_output_path == "/opt/scan-results/deps-dev.json"
 
-    @patch("thresher.scanners.deps_dev.ssh_write_file")
-    @patch("thresher.scanners.deps_dev.ssh_exec")
-    def test_failure(self, mock_exec, mock_write):
-        mock_exec.return_value = SSHResult("", "error", 1)
-        mock_write.return_value = None
+    @patch("thresher.scanners.deps_dev.subprocess.run")
+    def test_failure(self, mock_run):
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = b""
+        mock_result.stderr = b"error"
+        mock_run.return_value = mock_result
 
-        result = run_deps_dev("vm", "/opt/scan-results")
+        result = run_deps_dev("/opt/scan-results")
 
         assert result.exit_code == 1
         assert len(result.errors) > 0

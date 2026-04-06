@@ -3,47 +3,47 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
 
 
-def run_clamav(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
+def run_clamav(target_dir: str, output_dir: str) -> ScanResults:
     """Run ClamAV to scan for known viruses and malware.
 
     Uses clamscan (on-demand scanner) rather than the daemon.
     Exit 0 = clean, 1 = virus found, 2 = error.
     """
     output_path = f"{output_dir}/clamav.txt"
-    cmd = (
-        f"clamscan -r --infected --no-summary "
-        f"{target_dir} > {output_path} 2>/dev/null"
-    )
 
     start = time.monotonic()
     try:
-        result = ssh_exec(vm_name, cmd, timeout=600)
+        result = subprocess.run(
+            ["clamscan", "-r", "--infected", "--no-summary", target_dir],
+            capture_output=True,
+            timeout=600,
+        )
+        Path(output_path).write_bytes(result.stdout)
         elapsed = time.monotonic() - start
 
-        if result.exit_code == 2:
-            logger.warning("ClamAV error (exit 2): %s", result.stderr)
+        if result.returncode == 2:
+            logger.warning("ClamAV error (exit 2): %s", result.stderr.decode())
             return ScanResults(
                 tool_name="clamav",
                 execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                errors=[f"ClamAV error (exit 2): {result.stderr}"],
+                exit_code=result.returncode,
+                errors=[f"ClamAV error (exit 2): {result.stderr.decode()}"],
             )
 
-        # Findings remain inside the VM at output_path.
-        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="clamav",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=result.returncode,
             raw_output_path=output_path,
         )
 

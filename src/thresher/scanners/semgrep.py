@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from thresher.scanners.models import Finding, ScanResults
-from thresher.vm.ssh import ssh_exec
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ _SEVERITY_MAP: dict[str, str] = {
 }
 
 
-def run_semgrep(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
+def run_semgrep(target_dir: str, output_dir: str) -> ScanResults:
     """Run Semgrep SAST scan with the auto config ruleset.
 
     Semgrep exits with code 0 on success (findings or not), code 1 on
@@ -26,38 +27,39 @@ def run_semgrep(vm_name: str, target_dir: str, output_dir: str) -> ScanResults:
     for real errors.
 
     Args:
-        vm_name: Name of the Lima VM.
-        target_dir: Path to the repository inside the VM.
-        output_dir: Directory for scan artifacts inside the VM.
+        target_dir: Path to the repository.
+        output_dir: Directory for scan artifacts.
 
     Returns:
-        ScanResults with execution metadata only (findings stay in VM).
+        ScanResults with execution metadata only (findings stay in output_dir).
     """
     output_path = f"{output_dir}/semgrep.json"
-    cmd = f"semgrep scan --config auto --json {target_dir} > {output_path} 2>/dev/null"
 
     start = time.monotonic()
     try:
-        result = ssh_exec(vm_name, cmd, timeout=600)
+        result = subprocess.run(
+            ["semgrep", "scan", "--config", "auto", "--json", target_dir],
+            capture_output=True,
+            timeout=600,
+        )
+        Path(output_path).write_bytes(result.stdout)
         elapsed = time.monotonic() - start
 
         # Semgrep exit 0 = success, 1 = findings with --error (not used here).
         # Other non-zero codes are real failures.
-        if result.exit_code not in (0, 1):
-            logger.warning("Semgrep exited with code %d: %s", result.exit_code, result.stderr)
+        if result.returncode not in (0, 1):
+            logger.warning("Semgrep exited with code %d: %s", result.returncode, result.stderr.decode())
             return ScanResults(
                 tool_name="semgrep",
                 execution_time_seconds=elapsed,
-                exit_code=result.exit_code,
-                errors=[f"Semgrep failed (exit {result.exit_code}): {result.stderr}"],
+                exit_code=result.returncode,
+                errors=[f"Semgrep failed (exit {result.returncode}): {result.stderr.decode()}"],
             )
 
-        # Findings remain inside the VM at output_path.
-        # No data crosses the VM trust boundary.
         return ScanResults(
             tool_name="semgrep",
             execution_time_seconds=elapsed,
-            exit_code=result.exit_code,
+            exit_code=result.returncode,
             raw_output_path=output_path,
         )
 
