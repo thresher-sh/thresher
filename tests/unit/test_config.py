@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 from pathlib import Path
 
@@ -278,12 +279,11 @@ class TestLaunchMode:
     def test_scan_config_launch_mode_validates(self):
         """launch_mode rejects invalid values."""
         config = ScanConfig(launch_mode="invalid")
-        with pytest.raises(ValueError, match="launch_mode"):
-            config.validate()
+        errors = config.validate()
+        assert any("launch_mode" in e for e in errors)
 
     def test_scan_config_serializes_to_json(self):
         """ScanConfig can round-trip through JSON for harness handoff."""
-        import json
         config = ScanConfig(repo_url="https://github.com/test/repo", launch_mode="docker")
         blob = config.to_json()
         restored = ScanConfig.from_json(blob)
@@ -292,7 +292,6 @@ class TestLaunchMode:
 
     def test_scan_config_from_json(self):
         """ScanConfig.from_json handles all fields."""
-        import json
         data = json.dumps({"repo_url": "https://example.com/repo", "launch_mode": "direct",
                            "skip_ai": True, "model": "opus"})
         config = ScanConfig.from_json(data)

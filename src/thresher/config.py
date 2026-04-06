@@ -124,7 +124,7 @@ class ScanConfig:
         if self.depth < 1:
             errors.append("depth must be >= 1")
         if self.launch_mode not in ("lima", "docker", "direct"):
-            raise ValueError(
+            errors.append(
                 f"launch_mode must be one of 'lima', 'docker', 'direct'; got {self.launch_mode!r}"
             )
         return errors
@@ -137,8 +137,6 @@ class ScanConfig:
             "skip_ai": self.skip_ai,
             "verbose": self.verbose,
             "output_dir": self.output_dir,
-            "anthropic_api_key": self.anthropic_api_key,
-            "oauth_token": self.oauth_token,
             "model": self.model,
             "log_dir": self.log_dir,
             "tmux": self.tmux,
