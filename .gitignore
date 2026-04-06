@@ -16,3 +16,4 @@ thresher.toml
 scanner.toml
 logs/
 .DS_Store
+.worktrees/
