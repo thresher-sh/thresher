@@ -1,0 +1,91 @@
+"""Lima+Docker launch mode — maximum isolation."""
+
+import logging
+import subprocess
+import tempfile
+from pathlib import Path
+
+from thresher.config import ScanConfig
+
+logger = logging.getLogger(__name__)
+BASE_VM_NAME = "thresher-base"
+DOCKER_IMAGE = "thresher:latest"
+
+
+def launch_lima(config: ScanConfig) -> int:
+    """Launch the harness inside Docker running in a Lima VM. Returns exit code."""
+    _ensure_vm_running()
+    _apply_firewall()
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        f.write(config.to_json())
+        config_path = f.name
+    try:
+        subprocess.run(
+            ["limactl", "copy", config_path, f"{BASE_VM_NAME}:/opt/config.json"],
+            check=True,
+        )
+        docker_cmd = _build_lima_docker_cmd(config)
+        result = subprocess.run(["limactl", "shell", BASE_VM_NAME, "--"] + docker_cmd)
+        if result.returncode == 0:
+            _copy_report_to_host(config.output_dir)
+        return result.returncode
+    finally:
+        Path(config_path).unlink(missing_ok=True)
+
+
+def _ensure_vm_running() -> None:
+    """Ensure the base Lima VM is running, starting it if stopped."""
+    result = subprocess.run(
+        ["limactl", "list", "--format", "{{.Status}}", BASE_VM_NAME],
+        capture_output=True,
+    )
+    status = result.stdout.decode().strip()
+    if status == "Running":
+        return
+    elif status == "Stopped":
+        subprocess.run(["limactl", "start", BASE_VM_NAME], check=True)
+    else:
+        raise RuntimeError(
+            f"Lima VM '{BASE_VM_NAME}' not found. Run 'thresher build' first."
+        )
+
+
+def _apply_firewall() -> None:
+    """Apply iptables firewall rules inside the Lima VM."""
+    from thresher.vm.firewall import generate_firewall_rules
+    rules = generate_firewall_rules()
+    subprocess.run(
+        ["limactl", "shell", BASE_VM_NAME, "--", "sudo", "bash", "-c", rules],
+        check=True,
+    )
+
+
+def _build_lima_docker_cmd(config: ScanConfig) -> list[str]:
+    return [
+        "docker", "run",
+        "-v", "/opt/reports:/output",
+        "-v", "/opt/config.json:/config/config.json:ro",
+        "-e", "ANTHROPIC_API_KEY",
+        "-e", "CLAUDE_CODE_OAUTH_TOKEN",
+        "--rm", "--read-only",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=1073741824",
+        "--tmpfs", "/home/thresher/.cache:rw,size=536870912",
+        "--tmpfs", "/opt/target:rw,size=2147483648",
+        "--tmpfs", "/opt/scan-results:rw,size=1073741824",
+        "--tmpfs", "/opt/deps:rw,size=2147483648",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--user", "thresher",
+        DOCKER_IMAGE,
+        "--config", "/config/config.json",
+        "--output", "/output",
+    ]
+
+
+def _copy_report_to_host(output_dir: str) -> None:
+    """Copy the report from the VM to the host output directory."""
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["limactl", "copy", "-r", f"{BASE_VM_NAME}:/opt/reports/.", output_dir],
+        check=True,
+    )
