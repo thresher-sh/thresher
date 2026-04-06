@@ -93,6 +93,7 @@ class ScanConfig:
     analyst_max_turns: int | None = None  # Global override for all analyst max_turns
     analyst_max_turns_by_name: dict[str, int] = field(default_factory=dict)  # Per-analyst overrides
     adversarial_max_turns: int | None = None  # Override adversarial agent max_turns (default 20)
+    launch_mode: str = "lima"  # How the harness is launched: lima, docker, or direct
 
     @property
     def has_ai_credentials(self) -> bool:
@@ -122,7 +123,63 @@ class ScanConfig:
             )
         if self.depth < 1:
             errors.append("depth must be >= 1")
+        if self.launch_mode not in ("lima", "docker", "direct"):
+            raise ValueError(
+                f"launch_mode must be one of 'lima', 'docker', 'direct'; got {self.launch_mode!r}"
+            )
         return errors
+
+    def to_json(self) -> str:
+        """Serialize config to JSON for harness handoff."""
+        data = {
+            "repo_url": self.repo_url,
+            "depth": self.depth,
+            "skip_ai": self.skip_ai,
+            "verbose": self.verbose,
+            "output_dir": self.output_dir,
+            "anthropic_api_key": self.anthropic_api_key,
+            "oauth_token": self.oauth_token,
+            "model": self.model,
+            "log_dir": self.log_dir,
+            "tmux": self.tmux,
+            "high_risk_dep": self.high_risk_dep,
+            "branch": self.branch,
+            "analyst_max_turns": self.analyst_max_turns,
+            "analyst_max_turns_by_name": self.analyst_max_turns_by_name,
+            "adversarial_max_turns": self.adversarial_max_turns,
+            "launch_mode": self.launch_mode,
+            "vm": {
+                "cpus": self.vm.cpus,
+                "memory": self.vm.memory,
+                "disk": self.vm.disk,
+            },
+            "limits": {
+                "max_json_size_mb": self.limits.max_json_size_mb,
+                "max_file_size_mb": self.limits.max_file_size_mb,
+                "max_copy_size_mb": self.limits.max_copy_size_mb,
+                "max_stdout_mb": self.limits.max_stdout_mb,
+                "max_concurrent_ssh": self.limits.max_concurrent_ssh,
+            },
+        }
+        return json.dumps(data)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "ScanConfig":
+        """Deserialize config from JSON."""
+        data = json.loads(json_str)
+        vm_data = data.pop("vm", {})
+        limits_data = data.pop("limits", {})
+        vm = VMConfig(**vm_data) if vm_data else VMConfig()
+        limits = LimitsConfig(**limits_data) if limits_data else LimitsConfig()
+        # Remove keys that aren't ScanConfig fields
+        known_fields = {
+            "repo_url", "depth", "skip_ai", "verbose", "output_dir",
+            "anthropic_api_key", "oauth_token", "model", "log_dir", "tmux",
+            "high_risk_dep", "branch", "analyst_max_turns",
+            "analyst_max_turns_by_name", "adversarial_max_turns", "launch_mode",
+        }
+        filtered = {k: v for k, v in data.items() if k in known_fields}
+        return cls(vm=vm, limits=limits, **filtered)
 
 
 def load_config(
