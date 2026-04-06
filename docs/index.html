@@ -88,6 +88,29 @@
 
   .nav-links a:hover { color: var(--arctic); }
 
+  .nav-links a.nav-highlight {
+    color: var(--violet);
+    font-weight: 600;
+  }
+
+  .nav-links a.nav-highlight:hover { color: var(--arctic); }
+
+  /* ── Mobile menu ────────────────────────────── */
+  .nav-toggle {
+    display: none;
+    background: none;
+    border: 1px solid var(--charcoal);
+    border-radius: 4px;
+    color: var(--bone);
+    font-family: var(--mono);
+    font-size: 18px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+
+  .nav-toggle:hover { border-color: var(--violet); }
+
   /* ── Hero ────────────────────────────────────── */
   .hero {
     min-height: 100vh;
@@ -514,7 +537,25 @@
     .hero-ascii { font-size: 9px; }
     .install-box { padding: 16px 20px; }
     .install-box .cmd { font-size: 14px; }
-    .nav-links { display: none; }
+    .nav-toggle { display: block; }
+    .nav-links {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      flex-direction: column;
+      gap: 0;
+      background: rgba(10, 10, 10, 0.97);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--charcoal);
+      padding: 8px 0;
+    }
+    .nav-links.open { display: flex; }
+    .nav-links li { border-bottom: 1px solid var(--charcoal); }
+    .nav-links li:last-child { border-bottom: none; }
+    .nav-links a { display: block; padding: 14px 24px; font-size: 14px; }
+    .nav-links a:hover { background: var(--charcoal); }
     .copy-tooltip {
       right: auto;
       left: 50%;
@@ -546,6 +587,7 @@
 <!-- ── Nav ──────────────────────────────────────────────── -->
 <nav>
   <a href="#" class="nav-brand"><span class="prompt-mark">$</span><span class="fin-mark">_/|</span> thresher</a>
+  <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">&#9776;</button>
   <ul class="nav-links">
     <li><a href="#what">What</a></li>
     <li><a href="#features">Features</a></li>
@@ -553,7 +595,8 @@
     <li><a href="#how-it-works">How It Works</a></li>
     <li><a href="#analysts">Analysts</a></li>
     <li><a href="#results">Results</a></li>
-    <li><a href="https://github.com/thresher-sh/thresher">GitHub</a></li>
+    <li><a href="https://code.thresher.sh" class="nav-highlight">limacode</a></li>
+    <li><a href="https://github.com/thresher-sh/thresher" class="nav-highlight">GitHub</a></li>
   </ul>
 </nav>
 
@@ -922,6 +965,18 @@
       <span class="copy-tooltip">copied!</span>
     </div>
     <a href="report.html" style="font-family: var(--mono); font-size: 14px; color: var(--violet); text-decoration: none; border: 1px solid var(--violet); border-radius: 8px; padding: 20px 32px; transition: background 0.2s, color 0.2s; position: relative; z-index: 1;">See a real scan report &rarr;</a>
+  </div>
+</section>
+
+<!-- ── Limacode ────────────────────────────────────────── -->
+<section style="max-width: 680px; margin: 0 auto; padding: 0 24px 80px; text-align: center;">
+  <div style="background: var(--terminal-black); border: 1px solid var(--charcoal); border-radius: 8px; padding: 28px 36px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+    <div style="text-align: left;">
+      <div style="font-size: 11px; font-weight: 700; color: var(--violet); letter-spacing: 2px; margin-bottom: 6px;">ALSO FROM THRESHER</div>
+      <div style="font-size: 15px; font-weight: 700; color: var(--arctic);">limacode</div>
+      <div style="font-size: 13px; color: var(--steel); margin-top: 4px;">Run AI coding agents in sandboxed Lima VMs.</div>
+    </div>
+    <a href="https://code.thresher.sh" style="font-family: var(--mono); font-size: 13px; color: var(--violet); text-decoration: none; border: 1px solid var(--violet); border-radius: 6px; padding: 10px 20px; transition: background 0.2s; white-space: nowrap;">code.thresher.sh &rarr;</a>
   </div>
 </section>
 
