@@ -26,6 +26,7 @@ dev = [
 thresher = "thresher.cli:main"
 thresher-build = "thresher.cli:build_entry"
 thresher-stop = "thresher.cli:stop_entry"
+thresher-harness = "thresher.harness:main"
 thresher-update-totals = "thresher.scripts.update_totals:main"
 
 [tool.pytest.ini_options]
