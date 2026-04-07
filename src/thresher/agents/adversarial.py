@@ -12,10 +12,11 @@ import json
 import logging
 import os
 import re
-import subprocess
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+from thresher.run import run as run_cmd
 
 from thresher.agents.prompts import ADVERSARIAL_SYSTEM_PROMPT
 from thresher.config import ScanConfig
@@ -543,10 +544,10 @@ def run_adversarial_verification(
 
     logger.info("Invoking adversarial agent")
     try:
-        proc = subprocess.run(
+        proc = run_cmd(
             cmd,
+            label="adversarial",
             env=env,
-            capture_output=True,
             timeout=2400,
             cwd=target_dir,
         )

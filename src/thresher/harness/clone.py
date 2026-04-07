@@ -10,7 +10,6 @@ Implements 4-phase defense against code execution during clone:
 
 import logging
 import os
-import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -75,10 +74,12 @@ def safe_clone(repo_url: str, target_dir: str, branch: str = "") -> str:
     clone_cmd += _SAFE_CLONE_FLAGS
     clone_cmd += [repo_url, target_dir]
 
-    result = subprocess.run(clone_cmd, env=_safe_env(), capture_output=True, text=True)
+    from thresher.run import run as run_cmd
+    result = run_cmd(clone_cmd, label="git-clone", env=_safe_env())
     if result.returncode != 0:
+        stderr = result.stdout.decode(errors="replace") if isinstance(result.stdout, bytes) else ""
         raise RuntimeError(
-            f"[safe_clone] git clone failed (exit {result.returncode}): {result.stderr}"
+            f"[safe_clone] git clone failed (exit {result.returncode}): {stderr}"
         )
 
     # ── Phase 2: Sanitize .git/config ───────────────────────────────────
@@ -87,17 +88,16 @@ def safe_clone(repo_url: str, target_dir: str, branch: str = "") -> str:
 
     # ── Phase 3: Checkout with filters disabled ──────────────────────────
     logger.info("[safe_clone] Checking out working tree...")
-    checkout_result = subprocess.run(
+    checkout_result = run_cmd(
         ["git", "checkout"],
+        label="git-checkout",
         cwd=target_dir,
         env=_safe_env(),
-        capture_output=True,
-        text=True,
     )
     if checkout_result.returncode != 0:
+        stderr = checkout_result.stdout.decode(errors="replace") if isinstance(checkout_result.stdout, bytes) else ""
         raise RuntimeError(
-            f"[safe_clone] git checkout failed (exit {checkout_result.returncode}): "
-            f"{checkout_result.stderr}"
+            f"[safe_clone] git checkout failed (exit {checkout_result.returncode}): {stderr}"
         )
 
     # ── Phase 4: Post-checkout validation ────────────────────────────────

@@ -52,10 +52,10 @@ def run_all_scanners(
                 result = future.result()
                 results.append(result)
                 logger.info(
-                    "Scanner %s completed (exit=%d, errors=%d)",
+                    "Scanner %s done (exit=%d, %.1fs)",
                     name,
                     result.exit_code,
-                    len(result.errors),
+                    result.execution_time_seconds,
                 )
             except Exception as exc:
                 logger.exception("Scanner %s failed", name)

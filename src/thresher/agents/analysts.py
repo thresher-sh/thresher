@@ -14,10 +14,11 @@ import logging
 import os
 import re
 import statistics
-import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+from thresher.run import run as run_cmd
 from typing import Any
 
 import yaml
@@ -411,10 +412,10 @@ def _run_single_analyst(
     logger.info("Invoking %s", label)
     start_time = time.monotonic()
     try:
-        proc = subprocess.run(
+        proc = run_cmd(
             cmd,
+            label=f"analyst-{name}",
             env=env,
-            capture_output=True,
             timeout=3600,
             cwd=target_dir,
         )

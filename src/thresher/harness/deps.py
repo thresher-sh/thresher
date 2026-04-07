@@ -10,9 +10,10 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
+
+from thresher.run import run as run_cmd, retry
 
 log = logging.getLogger(__name__)
 
@@ -32,37 +33,30 @@ def detect_ecosystems(target_dir: str) -> list[str]:
     detected: list[str] = []
     base = Path(target_dir)
     for ecosystem, indicators in _ECOSYSTEM_INDICATORS.items():
-        if any((base / f).exists() for f in indicators):
+        found = [f for f in indicators if (base / f).exists()]
+        if found:
             detected.append(ecosystem)
+            log.info("Detected %s ecosystem (found: %s)", ecosystem, ", ".join(found))
+    if not detected:
+        log.info("No package ecosystems detected in %s", target_dir)
     return detected
 
 
-# ── Retry helper ──────────────────────────────────────────────────────────────
-
-def _retry(cmd: list[str], *, max_retries: int = 3, **kwargs) -> subprocess.CompletedProcess:
-    """Run *cmd*, retrying up to *max_retries* times with exponential backoff."""
-    import time
-
-    delay = 2
-    last_exc: Exception | None = None
-    for attempt in range(max_retries):
-        try:
-            result = subprocess.run(cmd, **kwargs)
-            if result.returncode == 0:
-                return result
-            log.warning("Command %s exited %d (attempt %d/%d)", cmd[0], result.returncode, attempt + 1, max_retries)
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            log.warning("Command %s raised %s (attempt %d/%d)", cmd[0], exc, attempt + 1, max_retries)
-
-        if attempt + 1 < max_retries:
-            log.info("Retrying in %ds...", delay)
-            time.sleep(delay)
-            delay *= 2
-
-    if last_exc is not None:
-        raise last_exc
-    return result  # type: ignore[return-value]  # returncode != 0 but caller decides
+def _log_download_summary(ecosystem: str, output_dir: Path) -> None:
+    """Log count and total size of downloaded artifacts."""
+    if not output_dir.exists():
+        return
+    files = [f for f in output_dir.iterdir() if f.is_file() and not f.name.startswith("_")]
+    total_size = sum(f.stat().st_size for f in files)
+    if files:
+        size_mb = total_size / (1024 * 1024)
+        log.info("  %s: downloaded %d artifacts (%.1f MB)", ecosystem, len(files), size_mb)
+        for f in sorted(files)[:5]:
+            log.debug("    %s (%.1f KB)", f.name, f.stat().st_size / 1024)
+        if len(files) > 5:
+            log.debug("    ... and %d more", len(files) - 5)
+    else:
+        log.info("  %s: no artifacts downloaded", ecosystem)
 
 
 # ── Download: Python ──────────────────────────────────────────────────────────
@@ -89,11 +83,12 @@ def download_python(target_dir: str, deps_dir: str) -> None:
     if not req_args:
         return
 
-    log.info("Downloading Python dependencies...")
+    log.info("Downloading Python dependencies (source-only)...")
     cmd = ["pip3", "download", "--no-binary", ":all:", "-d", str(output_dir)] + req_args
-    result = _retry(cmd, max_retries=3)
+    result = retry(cmd, label="pip3-download", attempts=3)
     if result.returncode != 0:
         log.warning("Some Python packages failed to download")
+    _log_download_summary("python", output_dir)
 
 
 def _extract_pipfile_reqs(pipfile: Path, out: Path) -> None:
@@ -141,14 +136,15 @@ def download_node(target_dir: str, deps_dir: str) -> None:
     for name, version in deps.items():
         spec = f"{name}@{version}" if version and not version.startswith("file:") else name
         log.debug("  Packing %s", spec)
-        result = _retry(
+        result = retry(
             ["npm", "pack", spec],
-            max_retries=3,
+            label=f"npm-pack-{name}",
+            attempts=3,
             cwd=str(output_dir),
-            capture_output=True,
         )
         if result.returncode != 0:
             log.warning("Failed to pack %s", spec)
+    _log_download_summary("node", output_dir)
 
 
 # ── Download: Rust ────────────────────────────────────────────────────────────
@@ -167,9 +163,10 @@ def download_rust(target_dir: str, deps_dir: str) -> None:
         project_copy = Path(tmp) / "project"
         shutil.copytree(target_dir, str(project_copy))
 
-        result = _retry(
+        result = retry(
             ["cargo", "vendor", str(output_dir)],
-            max_retries=3,
+            label="cargo-vendor",
+            attempts=3,
             cwd=str(project_copy),
         )
 
@@ -178,15 +175,17 @@ def download_rust(target_dir: str, deps_dir: str) -> None:
             lock = project_copy / "Cargo.lock"
             if lock.exists() and "version" in lock.read_text():
                 log.info("Lockfile v4 detected, retrying with -Znext-lockfile-bump...")
-                result2 = _retry(
+                result2 = retry(
                     ["cargo", "-Znext-lockfile-bump", "vendor", str(output_dir)],
-                    max_retries=3,
+                    label="cargo-vendor-nightly",
+                    attempts=3,
                     cwd=str(project_copy),
                 )
                 if result2.returncode != 0:
                     log.warning("cargo vendor failed (lockfile v4 incompatible)")
             else:
                 log.warning("cargo vendor failed")
+    _log_download_summary("rust", output_dir)
 
 
 # ── Download: Go ──────────────────────────────────────────────────────────────
@@ -208,9 +207,10 @@ def download_go(target_dir: str, deps_dir: str) -> None:
         gomodcache.mkdir()
 
         env = {**os.environ, "GOMODCACHE": str(gomodcache)}
-        result = _retry(
+        result = retry(
             ["go", "mod", "vendor"],
-            max_retries=3,
+            label="go-mod-vendor",
+            attempts=3,
             cwd=str(project_copy),
             env=env,
         )
@@ -227,6 +227,7 @@ def download_go(target_dir: str, deps_dir: str) -> None:
                     shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
                 else:
                     shutil.copy2(str(item), str(dest))
+    _log_download_summary("go", output_dir)
 
 
 # ── Download: Hidden deps ─────────────────────────────────────────────────────
@@ -279,8 +280,6 @@ def download_hidden(hidden_deps: dict, deps_dir: str, config: dict) -> None:
 
         try:
             _fetch_hidden_dep(dep_type, source, i, output_dir)
-        except subprocess.TimeoutExpired:
-            log.error("%s TIMEOUT downloading %s", tag, source)
         except Exception as exc:  # noqa: BLE001
             log.error("%s ERROR: %s", tag, exc)
 
@@ -315,23 +314,24 @@ def _fetch_hidden_dep(dep_type: str, source: str, idx: int, output_dir: Path) ->
                 "-c", "core.fsmonitor=false",
                 source, str(dest),
             ]
-        subprocess.run(clone_cmd, timeout=120, capture_output=True)
+        run_cmd(clone_cmd, label=f"git-clone-hidden-{idx}", timeout=120)
         env = {**os.environ, "GIT_LFS_SKIP_SMUDGE": "1", "GIT_TERMINAL_PROMPT": "0"}
-        subprocess.run(["git", "checkout"], cwd=str(dest), timeout=60, capture_output=True, env=env)
+        run_cmd(["git", "checkout"], label=f"git-checkout-hidden-{idx}", timeout=60, cwd=str(dest), env=env)
         log.info("    -> cloned to %s", dest)
 
     elif dep_type == "npm":
         pkg_dir = output_dir / f"npm-{idx}"
         pkg_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["npm", "pack", source], cwd=str(pkg_dir), timeout=120, capture_output=True)
+        run_cmd(["npm", "pack", source], label=f"npm-pack-hidden-{idx}", timeout=120, cwd=str(pkg_dir))
         log.info("    -> downloaded to %s", pkg_dir)
 
     elif dep_type == "pypi":
         pkg_dir = output_dir / f"pypi-{idx}"
         pkg_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
+        run_cmd(
             ["pip3", "download", "--no-binary", ":all:", "-d", str(pkg_dir), source],
-            timeout=120, capture_output=True,
+            label=f"pip3-download-hidden-{idx}",
+            timeout=120,
         )
         log.info("    -> downloaded to %s", pkg_dir)
 
@@ -344,7 +344,7 @@ def _fetch_hidden_dep(dep_type: str, source: str, idx: int, output_dir: Path) ->
     elif dep_type == "url":
         dest_dir = output_dir / f"url-{idx}"
         dest_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
+        run_cmd(
             [
                 "curl", "-fsSL",
                 "--max-time", "60",
@@ -353,7 +353,8 @@ def _fetch_hidden_dep(dep_type: str, source: str, idx: int, output_dir: Path) ->
                 "--proto", "=https,http",
                 source,
             ],
-            timeout=90, capture_output=True,
+            label=f"curl-hidden-{idx}",
+            timeout=90,
         )
         log.info("    -> downloaded to %s", dest_dir)
 
@@ -434,7 +435,17 @@ def build_manifest(deps_dir: str) -> None:
 
     manifest_path = base / "dep_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    log.info("Wrote manifest to %s", manifest_path)
+
+    # Log summary
+    total = sum(len(pkgs) for pkgs in manifest.values())
+    ecosystems_found = list(manifest.keys())
+    log.info("Dependency manifest: %d packages across %s", total, ecosystems_found)
+    for eco, pkgs in manifest.items():
+        log.info("  %s: %d packages", eco, len(pkgs))
+        for pkg in pkgs[:10]:
+            log.debug("    %s %s", pkg["name"], pkg["version"])
+        if len(pkgs) > 10:
+            log.debug("    ... and %d more", len(pkgs) - 10)
 
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────

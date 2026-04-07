@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
+
+from thresher.run import run as run_cmd
 
 from thresher.agents.prompts import ANALYST_SYSTEM_PROMPT
 from thresher.config import ScanConfig
@@ -211,10 +212,10 @@ def run_analysis(
 
     logger.info("Invoking analyst agent (independent researcher)")
     try:
-        proc = subprocess.run(
+        proc = run_cmd(
             cmd,
+            label="analyst",
             env=env,
-            capture_output=True,
             timeout=3600,
             cwd=target_dir,
         )

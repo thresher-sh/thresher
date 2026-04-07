@@ -7,9 +7,10 @@ import json
 import logging
 import os
 import shutil
-import subprocess
 from datetime import datetime, timezone
 from typing import Any
+
+from thresher.run import run as run_cmd
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -477,13 +478,12 @@ def _generate_agent_report(
     proc_env = {**os.environ, **env}
 
     try:
-        result = subprocess.run(
+        result = run_cmd(
             claude_cmd,
+            label="synthesize",
             cwd=report_dir,
             env=proc_env,
             timeout=1800,
-            capture_output=True,
-            text=True,
         )
         exit_code = result.returncode
     except Exception as exc:

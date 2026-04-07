@@ -19,9 +19,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
+
+from thresher.run import run as run_cmd
 
 from thresher.config import ScanConfig
 
@@ -143,10 +144,10 @@ def run_predep_discovery(
 
     logger.info("Running pre-dependency discovery agent")
     try:
-        proc = subprocess.run(
+        proc = run_cmd(
             cmd,
+            label="predep",
             env=env,
-            capture_output=True,
             timeout=600,
             cwd=target_dir,
         )
