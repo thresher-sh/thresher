@@ -3,51 +3,59 @@
 ## System Layers
 
 ```
-Host (macOS, Apple Silicon)
+Host
 │
-├── CLI (thresher)
+├── CLI (thresher) — thin launcher
 │   ├── Config loader (thresher.toml + CLI args + env vars)
-│   ├── Tmux UI orchestration
-│   └── Report output to host filesystem
+│   ├── Launch mode selector (Lima+Docker / Docker / Direct)
+│   └── Tmux UI orchestration
 │
-└── Lima VM (ephemeral, vz backend, Ubuntu 24.04 ARM64)
+├── Launcher (picks where harness runs)
+│   ├── Lima+Docker (default) — VM + iptables + container
+│   ├── Docker (--docker) — container sandbox only
+│   └── Direct (--no-vm) — local subprocess (dev mode)
+│
+└── Harness (self-contained pipeline, mode-agnostic)
     │
-    ├── Egress Firewall (iptables whitelist, 18 domains)
+    ├── Hamilton DAG Pipeline
+    │   ├── Hardened git clone (4-phase, Python)
+    │   ├── AI pre-dep discovery (optional)
+    │   ├── Dependency resolution (source-only)
+    │   ├── SBOM generation (Syft)
+    │   ├── 22 scanners (parallel via ThreadPoolExecutor)
+    │   ├── 8 AI analyst agents (parallel, optional)
+    │   ├── Adversarial verification (optional)
+    │   ├── EPSS/KEV enrichment
+    │   └── Report synthesis
     │
-    ├── Docker Engine
-    │   └── Dependency download containers (per-ecosystem)
-    │       ├── python:3.12-slim
-    │       ├── node:20-slim
-    │       ├── rust:slim
-    │       └── golang:1.22-slim
-    │
-    ├── Deterministic Scanners (16 tools, parallel execution)
-    │   ├── Phase 1: Syft (SBOM generation)
-    │   └── Phase 2: 15 scanners in parallel
-    │
-    └── AI Analysis Agents (Claude Code headless, optional)
-        ├── Agent 1: Analyst (independent code investigation)
-        └── Agent 2: Adversarial (false positive reduction)
+    └── Output → /output (volume-mounted or local)
 ```
 
 ## Component Map
 
 ```
 src/thresher/
-├── cli.py                    # Entry point, tmux UI, orchestration
-├── config.py                 # TOML config + CLI override + env vars
+├── cli.py                    # CLI: arg parsing, launch mode dispatch
+├── config.py                 # ScanConfig, LimitsConfig (JSON serialization)
+├── branding.py               # Terminal UI styling
 │
-├── vm/
-│   ├── lima.py               # VM create/start/stop/destroy/provision
-│   ├── ssh.py                # SSH exec/copy/write via limactl
-│   └── firewall.py           # iptables rule generation
+├── harness/
+│   ├── __init__.py
+│   ├── __main__.py           # Entrypoint: python -m thresher.harness
+│   ├── pipeline.py           # Hamilton DAG definition (all stages)
+│   ├── clone.py              # 4-phase hardened git clone (Python)
+│   ├── deps.py               # Ecosystem detection + source-only download
+│   ├── scanning.py           # Scanner orchestration (ThreadPoolExecutor)
+│   └── report.py             # Report validation + enrichment + generation
 │
-├── docker/
-│   └── sandbox.py            # Ecosystem detection, Docker dep downloads
+├── launcher/
+│   ├── direct.py             # --no-vm: subprocess on host
+│   ├── docker.py             # --docker: container with security hardening
+│   └── lima.py               # default: Lima VM + Docker inside it
 │
 ├── scanners/
 │   ├── models.py             # Finding + ScanResults dataclasses
-│   ├── runner.py             # Orchestration (phase 1 → phase 2 parallel)
+│   ├── runner.py             # Legacy orchestration (replaced by harness)
 │   ├── syft.py               # SBOM generation
 │   ├── grype.py              # SCA (CVEs via SBOM)
 │   ├── osv.py                # SCA + malicious packages
@@ -57,167 +65,101 @@ src/thresher/
 │   ├── checkov.py            # IaC security
 │   ├── hadolint.py           # Dockerfile linting
 │   ├── guarddog.py           # Supply chain behavioral analysis
+│   ├── guarddog_deps.py      # GuardDog on dep source code
 │   ├── gitleaks.py           # Secrets detection
 │   ├── yara_scanner.py       # Malware signatures
 │   ├── capa_scanner.py       # Binary capability analysis
 │   ├── govulncheck.py        # Go vulnerabilities (call-graph)
 │   ├── cargo_audit.py        # Rust vulnerabilities
 │   ├── scancode.py           # License compliance
-│   └── clamav.py             # Antivirus
+│   ├── clamav.py             # Antivirus
+│   ├── entropy.py            # Obfuscation/encoded payload detection
+│   ├── install_hooks.py      # Install script detection
+│   ├── deps_dev.py           # OpenSSF Scorecard, typosquatting
+│   ├── registry_meta.py      # Maintainer changes, anomalies
+│   └── semgrep_supply_chain.py # Custom supply-chain rules
 │
 ├── agents/
-│   ├── prompts.py            # System prompts for both agents
-│   ├── analyst.py            # AI security researcher agent
-│   └── adversarial.py        # AI false-positive verifier agent
+│   ├── prompts.py            # System prompts for agents
+│   ├── analyst.py            # Single analyst agent runner
+│   ├── analysts.py           # Parallel 8-agent orchestration
+│   ├── adversarial.py        # Adversarial verification
+│   ├── predep.py             # Pre-dep hidden dependency discovery
+│   └── definitions/          # YAML persona definitions
 │
-└── report/
-    ├── scoring.py            # EPSS/KEV enrichment, priority computation
-    └── synthesize.py         # Report generation orchestration
+├── report/
+│   ├── scoring.py            # EPSS/KEV enrichment, priority computation
+│   └── synthesize.py         # Report generation orchestration
+│
+└── vm/
+    ├── lima.py               # Lima VM lifecycle (create/start/stop)
+    └── firewall.py           # iptables rules (Lima mode only)
+
+docker/
+├── Dockerfile                # Single image: harness + all scanner tools
 ```
 
 ## Execution Flow
 
-### Phase 1: Setup
+### Phase 1: Launch
 
 ```
 CLI parses args + loads thresher.toml
     │
     ├── Load/validate config (ScanConfig)
     ├── Resolve API credentials (env var or Keychain OAuth)
+    ├── Serialize config to JSON
     ├── Start tmux session (if enabled)
     │
     ▼
-VM Lifecycle
+Launcher (based on --docker / --no-vm / default)
     │
-    ├── Check for existing base VM (thresher-base)
-    │   ├── Exists + running → reuse
-    │   ├── Exists + stopped → start
-    │   └── Doesn't exist → create + provision
-    │
-    ├── Create ephemeral VM (thresher-<timestamp>) from base
-    ├── Wait for SSH readiness (poll)
-    └── Apply firewall rules
+    ├── Direct: subprocess.run(python -m thresher.harness --config ...)
+    ├── Docker: docker run thresher:latest --config ...
+    └── Lima+Docker: limactl shell → docker run thresher:latest ...
 ```
 
-### Phase 2: Target Preparation
+### Phase 2: Harness Pipeline (Hamilton DAG)
 
 ```
-Clone target repository
+Clone target repository (hardened 4-phase clone)
     │
-    ├── git clone --depth=1 <repo-url> /opt/target
+    ├── Phase 1: git clone --no-checkout --depth=1 (hooks disabled)
+    ├── Phase 2: Sanitize .git/config (rewrite with safe settings)
+    ├── Phase 3: Checkout with all filters disabled
+    └── Phase 4: Post-checkout validation (symlinks, path traversal)
     │
     ▼
-Dependency Download
+Dependency Resolution
     │
-    ├── Detect ecosystems (scan for manifest files)
-    │   ├── requirements.txt / pyproject.toml / setup.py → Python
-    │   ├── package.json → Node
-    │   ├── Cargo.toml → Rust
-    │   └── go.mod → Go
-    │
-    ├── For each ecosystem:
-    │   ├── Pull Docker image
-    │   ├── Mount source read-only, deps volume read-write
-    │   └── Download source-only (no install scripts)
-    │       ├── Python: pip download --no-binary :all:
-    │       ├── Node: npm pack
-    │       ├── Rust: cargo vendor
-    │       └── Go: go mod vendor
-    │
-    └── Monorepo support: finds all package directories recursively
-```
-
-### Phase 3: Scanning
-
-```
-Scanner Orchestration (runner.py)
-    │
-    ├── Phase 1: Syft → SBOM (CycloneDX JSON)
-    │   └── sbom.json stored at /opt/scan-results/sbom.json
-    │
-    └── Phase 2: ThreadPoolExecutor(max_workers=15)
-        ├── Grype (reads SBOM from Phase 1)
-        ├── OSV-Scanner
-        ├── Trivy
-        ├── Semgrep
-        ├── Bandit
-        ├── Checkov
-        ├── Hadolint
-        ├── GuardDog
-        ├── Gitleaks
-        ├── YARA
-        ├── capa
-        ├── govulncheck
-        ├── cargo-audit
-        ├── ScanCode
-        └── ClamAV
-
-    All scanners:
-    ├── Execute via SSH (ssh_exec)
-    ├── Write raw output to /opt/scan-results/<tool>.json
-    ├── Parse output into normalized Finding objects
-    └── Return ScanResults (findings + errors + metadata)
-
-    Aggregation:
-    ├── Collect all findings from all scanners
-    ├── De-duplicate by (CVE ID, package name)
-    │   └── Keep the richer finding (more fields populated)
-    └── Sort by severity (critical → high → medium → low → info)
-```
-
-### Phase 4: AI Analysis (Optional)
-
-```
-Agent 1: Analyst
-    │
-    ├── Runs Claude Code headless inside VM via SSH
-    ├── Tools available: Read, Glob, Grep (no execution)
-    ├── No prior context from scanners (independent investigation)
-    ├── Investigates: supply chain, malicious code, dangerous deps
-    └── Outputs: JSON with risk_score (0-10) per file + reasoning
-
-    ▼
-Agent 2: Adversarial
-    │
-    ├── Receives high-risk findings from Analyst (risk_score >= 4)
-    ├── For each finding:
-    │   ├── Read the flagged file
-    │   ├── Attempt benign explanation
-    │   ├── Evaluate explanation honestly
-    │   └── Verdict: confirmed or downgraded (with revised score)
-    └── Outputs: JSON with verdicts and revised risk scores
-```
-
-### Phase 5: Enrichment and Reporting
-
-```
-Scoring & Enrichment
-    │
-    ├── Collect CVE IDs from all findings
-    ├── Fetch EPSS scores (FIRST API, batched by 100)
-    ├── Fetch CISA KEV catalog
-    ├── Compute composite priority per finding:
-    │   ├── P0: In KEV, or AI confidence ≥90 for exfiltration/backdoor
-    │   ├── Critical: CVSS ≥9, EPSS >0.9, or AI risk 9-10 confirmed
-    │   ├── High: CVSS 7-8.9, EPSS >0.75, or AI risk 7-8
-    │   ├── Medium: CVSS 4-6.9, EPSS >0.5, or AI risk 4-6
-    │   └── Low: everything else
+    ├── Detect ecosystems (manifest files)
+    ├── AI pre-dep discovery (hidden deps, optional)
+    ├── Source-only downloads per ecosystem:
+    │   ├── Python: pip download --no-binary :all:
+    │   ├── Node: npm pack
+    │   ├── Rust: cargo vendor
+    │   └── Go: go mod vendor
+    └── Generate dep_manifest.json
     │
     ▼
-Report Generation
+Scanning (22 tools, parallel via ThreadPoolExecutor)
     │
-    ├── executive-summary.md (GO / CAUTION / DO NOT USE)
-    ├── detailed-report.md (all findings by priority)
-    ├── findings.json (machine-readable)
-    ├── sbom.json (CycloneDX)
-    └── scan-results/*.json (raw scanner outputs)
-
+    ├── Syft → SBOM (sequential, required before Grype)
+    └── 21 scanners in parallel (subprocess.run per tool)
+    │
     ▼
-Cleanup
+AI Analysis (optional, skip_ai bypasses)
     │
-    ├── Copy report from VM to host
-    ├── Destroy ephemeral VM
-    └── Print summary + report path
+    ├── 8 analyst agents in parallel (independent investigation)
+    └── Adversarial agent verifies high-risk findings
+    │
+    ▼
+Enrichment & Report
+    │
+    ├── EPSS/KEV enrichment
+    ├── Report synthesis (template or AI)
+    ├── Report validation (extension whitelist, size limits)
+    └── Output → /output directory
 ```
 
 ## Data Model
@@ -260,22 +202,22 @@ class ScanResults:
 
 ## Communication Paths
 
-All communication between the host and the VM happens over SSH via `limactl shell`:
+The harness is self-contained — it runs the full pipeline and writes output to a directory. Communication varies by launch mode:
 
 ```
-Host ──SSH──▶ VM
-  │              │
-  ├── ssh_exec() ──▶ Run commands, stream stdout/stderr
-  ├── ssh_copy_to() ──▶ Copy files host → VM
-  ├── ssh_copy_from() ──▶ Copy files VM → host
-  └── ssh_write_file() ──▶ Write content to VM file (injection-safe)
+Direct:  CLI → subprocess → harness (same filesystem)
+Docker:  CLI → docker run → harness (volume mount for output)
+Lima:    CLI → limactl shell → docker run → harness (copy report to host)
 ```
 
-Environment variables (API keys) are passed via SSH environment, never written to disk inside the VM.
+Config flows one way: CLI serializes `ScanConfig` to JSON, harness deserializes it. The harness never reads `thresher.toml` directly.
+
+Credentials are passed via environment variables (`-e ANTHROPIC_API_KEY`), never written to disk.
 
 ## Threading Model
 
 - **Scanner execution**: `ThreadPoolExecutor` with one thread per scanner (15 concurrent)
-- **Dependency downloads**: Sequential per ecosystem (Docker containers)
-- **AI agents**: Sequential (Analyst runs first, Adversarial runs second with Analyst's output)
+- **AI analysts**: `ThreadPoolExecutor` with 8 parallel analyst agents
+- **Dependency downloads**: Sequential per ecosystem
+- **Adversarial verification**: Sequential (runs after all analysts complete)
 - **EPSS API calls**: Sequential batched requests (100 CVEs per batch)

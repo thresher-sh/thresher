@@ -17,7 +17,7 @@
       ~
 ```
 
-Supply chain security scanner. 22 deterministic scanners + 8 AI analyst personas inside a hardened, ephemeral VM. Produces a go/no-go report.
+Supply chain security scanner. 22 deterministic scanners + 8 AI analyst personas inside a hardened container. Three isolation modes: Lima+Docker (max security), Docker (container sandbox), or direct (dev mode). Produces a go/no-go report.
 
 > **Disclaimer:** Thresher is provided "as is" without warranty of any kind. It does not guarantee detection of all vulnerabilities, malicious code, or supply chain threats. Results should not be treated as a substitute for professional security audits. No vm isolation is guaranteed safe, Use at your own risk.
 
@@ -36,13 +36,9 @@ Or with pip:
 pip install -e .
 ```
 
-Then set up the VM:
+Then build the Docker image:
 
 ```bash
-# Import a pre-built VM image (fast — ~30 seconds)
-thresher import latest
-
-# Or build your own (~10 minutes)
 thresher build
 ```
 
@@ -55,28 +51,32 @@ thresher scan https://github.com/owner/repo
 ## What It Does
 
 ```
-Host (macOS)
-  └── Lima VM (ephemeral, firewalled, zero-sudo)
-        ├── Hardened git clone (safe_clone.sh)
-        ├── AI pre-dep discovery (hidden dependency sources)
-        ├── Docker container (dependency resolution)
-        ├── 22 deterministic scanners (parallel)
-        ├── 8 AI analyst agents + adversarial verification
-        └── Report synthesis
+Host
+  └── CLI (thin launcher — picks where to run)
+        │
+        ├── Lima+Docker (default on macOS — max isolation)
+        │     └── iptables firewall + container sandbox
+        ├── Docker (--docker — container sandbox, no VM)
+        └── Direct (--no-vm — dev mode, runs on host)
+              │
+              └── Harness (Hamilton DAG pipeline)
+                    ├── Hardened git clone (4-phase, Python)
+                    ├── AI pre-dep discovery (hidden dependency sources)
+                    ├── Dependency resolution (source-only, no install scripts)
+                    ├── 22 deterministic scanners (parallel)
+                    ├── 8 AI analyst agents + adversarial verification
+                    └── Report synthesis → /output
 ```
 
 | Step | What Happens |
 |------|-------------|
-| **Isolate** | Ephemeral VM. 3-layer network hardening. No mounts, no ports. |
+| **Launch** | CLI picks mode: Lima+Docker (firewall + container), Docker (container), or direct (dev). |
 | **Clone** | 4-phase hardened clone. Neutralizes all known git execution vectors. |
 | **Discover** | AI finds hidden deps (git clones in Makefiles, curl in Dockerfiles, submodules). |
-| **Resolve** | Single Docker container. Source-only downloads. No install scripts. |
+| **Resolve** | Source-only downloads. No install scripts. |
 | **Scan** | 22 scanners: SCA, SAST, behavioral, entropy, install hooks, malware, license. |
 | **Analyze** | 8 AI personas investigate in parallel. Adversarial verification reduces false positives. |
 | **Report** | EPSS/KEV enrichment. Go / Caution / Do Not Use recommendation. |
-| **Cleanup** | VM destroyed. Nothing persists. |
-
-All scan data stays inside the VM until the final report copy.
 
 ---
 
@@ -129,14 +129,17 @@ Each runs as a Claude Code headless agent inside the VM with specialized tools.
 ## Usage
 
 ```bash
-# Full scan with AI analysis
+# Full scan — Lima+Docker (default, max isolation)
 thresher scan https://github.com/owner/repo
+
+# Docker container only (no VM, good for Linux/CI)
+thresher scan https://github.com/owner/repo --docker
+
+# Direct mode (dev — runs on host, no container)
+thresher scan https://github.com/owner/repo --no-vm
 
 # Deterministic scanners only (no API key needed)
 thresher scan https://github.com/owner/repo --skip-ai
-
-# Custom VM resources
-thresher scan https://github.com/owner/repo --cpus 8 --memory 16 --disk 100
 
 # Download high-risk hidden dependencies (binaries, tarballs)
 thresher scan https://github.com/owner/repo --high-risk-dep
@@ -156,25 +159,28 @@ uv run thresher scan https://github.com/owner/repo --skip-ai
 | Command | What It Does |
 |---------|-------------|
 | `thresher scan <url>` | Scan a repository |
-| `thresher build` | Build/rebuild the cached base VM image |
+| `thresher build` | Build the Thresher Docker image |
 | `thresher stop` | Stop all VMs and tmux session |
-| `thresher list` | List available pre-built VM images from releases |
-| `thresher import <source>` | Import a pre-built VM image (skip the build) |
-| `thresher export` | Export your base VM image for distribution |
+| `thresher list` | List available pre-built images from releases |
+| `thresher import <source>` | Import a pre-built image (skip the build) |
+| `thresher export` | Export your image for distribution |
 
 ### Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--docker` | off | Run in Docker (no VM) |
+| `--no-vm` | off | Run directly on host (dev mode) |
 | `--depth N` | 2 | Transitive dependency depth |
 | `--skip-ai` | off | Deterministic scanners only |
 | `--high-risk-dep` | off | Download high-risk hidden deps |
 | `--verbose` | off | Detailed tool output |
 | `--output DIR` | `./thresher-reports` | Report output directory |
-| `--cpus N` | 4 | VM CPU count |
-| `--memory N` | 8 | VM memory in GiB |
-| `--disk N` | 50 | VM disk in GiB |
+| `--cpus N` | 4 | VM CPU count (Lima mode) |
+| `--memory N` | 8 | VM memory in GiB (Lima mode) |
+| `--disk N` | 50 | VM disk in GiB (Lima mode) |
 | `--tmux` | off | Tmux split-pane UI |
+| `--branch` | default | Git branch to scan |
 
 ### Configuration
 
@@ -241,29 +247,49 @@ P0 or Critical = **DO NOT USE**. High only = **CAUTION**. Medium and below = **G
 
 ## Security Model
 
+**Three isolation tiers (most → least):**
+
+| Mode | Isolation |
+|------|-----------|
+| **Lima+Docker** (default) | VM + iptables firewall + container sandbox |
+| **Docker** (`--docker`) | Container sandbox (`--read-only`, `--cap-drop=ALL`, `--no-new-privileges`) |
+| **Direct** (`--no-vm`) | Process isolation only (dev mode) |
+
+**Protections (all modes):**
+
 | Layer | What It Does |
 |-------|-------------|
-| **VM isolation** | Lima `vz` backend, `--plain`, no mounts, no port forwards |
-| **Zero sudo** | Scan user can only run one hardcoded Docker wrapper |
-| **3-layer network** | iptables whitelist + hostResolver DNS + gateway pinning |
-| **Hardened clone** | 4-phase safe_clone.sh (all git execution vectors neutralized) |
-| **Dep sandbox** | `--network=none`, `--read-only`, `--cap-drop=ALL` |
-| **Source-only** | `pip download --no-binary`, `npm pack`, `cargo vendor` |
-| **Host boundary** | Staging dir, symlink removal, path traversal rejection, size limits |
-| **API key** | tmpfs read-and-delete, never in shell environment |
-| **Ephemeral** | VM destroyed after each scan |
+| **Hardened clone** | 4-phase Python clone (hooks disabled, config sanitized, symlinks removed) |
+| **Source-only deps** | `pip download --no-binary`, `npm pack`, `cargo vendor` — no install scripts |
+| **Container hardening** | `--read-only`, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, tmpfs mounts |
+| **Report validation** | Extension whitelist, size limits, symlink rejection, path traversal detection |
+| **Credentials** | Environment variables only, never written to disk |
+
+**Lima+Docker additional layers:**
+
+| Layer | What It Does |
+|-------|-------------|
+| **VM isolation** | Lima `vz` backend, Apple Virtualization.framework |
+| **Egress firewall** | iptables whitelist (18 domains), all other egress dropped |
 
 ---
 
 ## Requirements
 
+**All modes:**
+- Python 3.11+
+- Docker
+- `ANTHROPIC_API_KEY` or `claude login` (unless `--skip-ai`)
+
+**Lima+Docker mode (default, macOS):**
 - macOS with Apple Silicon
 - [Lima](https://lima-vm.io) (`brew install lima`)
-- Python 3.11+
-- `ANTHROPIC_API_KEY` or `claude login` (unless `--skip-ai`)
-- [tmux](https://github.com/tmux/tmux) (`brew install tmux`) -- optional
 
-The VM needs ~30 GB disk. Configurable via `--disk` or `thresher.toml`.
+**Direct mode (`--no-vm`, dev):**
+- All 22 scanner tools installed locally
+
+**Optional:**
+- [tmux](https://github.com/tmux/tmux) (`brew install tmux`) — for split-pane UI
 
 ---
 

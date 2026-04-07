@@ -13,29 +13,69 @@ The target repository is **untrusted**. It may contain:
 
 The security model assumes the worst case: the target is actively hostile. Every isolation layer is designed to prevent untrusted code from reaching the host machine or exfiltrating data.
 
-## Isolation Layers
+## Isolation Tiers
 
-### Layer 1: Lima VM
+Thresher supports three launch modes with different isolation levels:
 
-The entire scan runs inside a [Lima](https://lima-vm.io) virtual machine using the `vz` backend (Apple's Virtualization.framework on Apple Silicon).
+```
+Most isolated:  Lima+Docker  (VM + iptables firewall + container sandbox)
+Middle:         Docker only   (container sandbox, no egress firewall)
+Least isolated: Direct/no-vm  (process isolation only, dev mode)
+```
 
-**VM Configuration** (`lima/thresher.yaml`):
+### Lima+Docker Mode (default on macOS)
 
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| `plain: true` | No shared folders | Prevents VM from accessing host filesystem |
-| `mounts: []` | No mount points | No host directories visible inside VM |
-| `networks: []` | No network sharing | VM has its own network stack |
-| Backend | `vz` | Native Apple Silicon virtualization |
-| OS | Ubuntu 24.04 LTS (ARM64) | Minimal attack surface |
+**4 layers of isolation:**
 
-**Key property**: The VM has **no access** to the host filesystem. Files are transferred explicitly via SSH (`ssh_copy_to` / `ssh_copy_from`).
+1. **Lima VM** — Apple Virtualization.framework (`vz` backend), no shared folders, no port forwards
+2. **Egress Firewall** — iptables whitelist (18 domains), all other outbound traffic dropped
+3. **Container Sandbox** — `--read-only`, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, non-root user
+4. **Source-only deps** — no install scripts execute
 
-### Layer 2: Egress Firewall
+### Docker Mode (`--docker`)
 
-The VM's outbound network traffic is restricted by iptables rules to a whitelist of 18 domains. All other outbound traffic is dropped and logged.
+**3 layers of isolation:**
 
-**Whitelisted Domains** (`vm_scripts/firewall.sh`):
+1. **Container Sandbox** — same hardening as Lima mode (`--read-only`, `--cap-drop=ALL`, `--no-new-privileges`)
+2. **Source-only deps** — no install scripts execute
+3. **Ephemeral container** — `--rm` (auto-removed)
+
+Docker mode has **no egress firewall**. The container has unrestricted network access. This is acceptable because source-only downloads prevent install script execution, and Docker mode targets Linux servers and CI environments.
+
+### Direct Mode (`--no-vm`)
+
+**1 layer of isolation:**
+
+1. **Source-only deps** — no install scripts execute
+
+Dev mode. User accepts the risk. All scanner tools must be installed locally.
+
+## Container Hardening (Docker and Lima+Docker modes)
+
+```
+docker run \
+  --rm \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=1g \
+  --tmpfs /home/thresher/.cache:rw,size=512m \
+  --tmpfs /opt/target:rw,size=2g \
+  --tmpfs /opt/scan-results:rw,size=1g \
+  --tmpfs /opt/deps:rw,size=2g \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  --user thresher \
+  -v <output>:/output \
+  -v <config>:/config/config.json:ro \
+  -e ANTHROPIC_API_KEY \
+  -e CLAUDE_CODE_OAUTH_TOKEN \
+  thresher:latest
+```
+
+## Egress Firewall (Lima+Docker mode only)
+
+The VM's outbound network traffic is restricted by iptables rules to a whitelist of 18 domains.
+
+**Whitelisted Domains**:
 
 | Domain | Purpose |
 |--------|---------|
@@ -54,25 +94,7 @@ The VM's outbound network traffic is restricted by iptables rules to a whitelist
 | `vuln.go.dev` | Go vulnerability DB |
 | `database.clamav.net` | ClamAV virus signatures |
 
-**Firewall rules**:
-- DNS (port 53) is allowed for domain resolution
-- HTTP/HTTPS to whitelisted IPs only
-- All other egress is **DROP** with logging
-- Domain names are resolved to IPs at firewall setup time
-
-**What this prevents**: If malicious code executes inside the VM, it cannot phone home to arbitrary C2 servers, exfiltrate data to attacker-controlled domains, or download additional payloads from non-whitelisted sources.
-
-### Layer 3: Docker Dependency Sandbox
-
-Dependencies are downloaded inside Docker containers running within the VM. This adds a second containment layer around the most dangerous phase: fetching untrusted packages.
-
-**Sandbox properties**:
-- Source code is mounted **read-only** into the container
-- Dependencies are written to a separate **read-write** volume
-- Optional `--network=none` after the download phase
-- Containers are `--rm` (auto-removed after execution)
-
-### Layer 4: Source-Only Downloads
+## Source-Only Downloads (all modes)
 
 Dependencies are downloaded as source archives without executing install scripts:
 
@@ -85,26 +107,28 @@ Dependencies are downloaded as source archives without executing install scripts
 
 **What this prevents**: Many supply chain attacks rely on install hooks (`setup.py`, `postinstall.sh`, `build.rs`) that execute arbitrary code during `pip install` or `npm install`. By downloading source-only, these hooks never run.
 
-### Layer 5: Ephemeral VMs
+## Credential Handling
 
-Each scan uses a fresh VM instance. After the scan completes:
-
-1. The report is copied from the VM to the host via SSH
-2. The VM is force-deleted (`limactl delete --force`)
-3. The VM's disk image is destroyed
-
-**What this prevents**: Cross-contamination between scans. Even if malicious code persists inside the VM filesystem, it is destroyed and cannot affect the next scan.
-
-The base VM (`thresher-base`) is preserved for reuse to avoid re-provisioning, but it contains only tools — never target code or dependencies.
-
-### Layer 6: Credential Handling
-
-- **API keys** are passed to the VM via SSH environment variables, never written to disk
+- **API keys** are passed via environment variables (`docker run -e`), never written to disk
 - `ANTHROPIC_API_KEY` environment variable takes precedence
 - Fallback: OAuth token from macOS Keychain (`claude login` session)
-- Credentials exist in VM memory only during the scan
+- In Docker/Lima modes, credentials exist only in container process memory (`--rm`)
+- No tmpfs ceremony needed — ephemeral container is the boundary
 
-**What this prevents**: If an attacker gains filesystem access inside the VM, they cannot find credentials on disk. Credentials only exist in process memory for the duration of the scan.
+**What this prevents**: If an attacker gains filesystem access inside the container, they cannot find credentials on disk. The read-only filesystem and `--rm` flag ensure nothing persists.
+
+## Report Validation (all modes)
+
+The harness validates all report output before writing:
+
+| Check | Action |
+|-------|--------|
+| Symlinks | Removed (filesystem escape vector) |
+| File extensions | Whitelist: `.json`, `.md`, `.txt`, `.csv`, `.log`, `.sarif`, `.html` |
+| File size | Per-file cap (default 50MB) |
+| Total size | Report directory cap (default 500MB) |
+| Executable bits | Stripped from all files |
+| Path traversal | Detected and rejected |
 
 ## What the AI Agents Can and Cannot Do
 

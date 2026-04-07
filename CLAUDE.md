@@ -7,102 +7,118 @@ Always use the task tool to plan out and do what you need and use it to hold you
 ## What This Is
 
 Supply chain security scanner. Scans open source repos for vulnerabilities,
-malicious code, and supply chain attacks using 20 deterministic scanners +
-AI analyst agents inside an isolated Lima VM.
+malicious code, and supply chain attacks using 22 deterministic scanners +
+8 AI analyst agents. Three launch modes: Lima+Docker (max isolation),
+Docker (container sandbox), or direct (dev mode).
 
 ## Project Structure
 
 ```
 src/thresher/
-  cli.py              Main entry point, scan orchestration
+  cli.py              Thin CLI launcher — arg parsing, launch mode dispatch
   config.py           ScanConfig, VMConfig, LimitsConfig, load_config()
+  branding.py         Terminal UI styling
+
+  harness/            Self-contained scan pipeline (mode-agnostic)
+    __init__.py
+    __main__.py       Entrypoint: python -m thresher.harness --config ...
+    pipeline.py       Hamilton DAG definition (all pipeline stages)
+    clone.py          4-phase hardened git clone (Python port of safe_clone.sh)
+    deps.py           Ecosystem detection + source-only dependency download
+    scanning.py       Scanner orchestration (ThreadPoolExecutor, 22 scanners)
+    report.py         Report validation, enrichment, generation
+
+  launcher/           Launch mode implementations
+    direct.py         --no-vm: subprocess on host (dev mode)
+    docker.py         --docker: container with security hardening
+    lima.py           default: Lima VM + Docker inside it
+
   agents/
     predep.py         Stage 1: pre-dep hidden dependency discovery
-    analyst.py        Stage 2: independent AI security researcher
-    adversarial.py    Stage 2: adversarial verification of analyst findings
+    analyst.py        Single analyst agent runner
+    analysts.py       Parallel 8-agent orchestration
+    adversarial.py    Adversarial verification of analyst findings
     prompts.py        System prompts for agents
+    definitions/      YAML persona definitions (8 analysts)
+
   scanners/
-    runner.py         Orchestrates all 20 scanners in parallel
+    runner.py         Legacy orchestration (replaced by harness/scanning.py)
     models.py         Finding, ScanResults dataclasses
-    entropy.py        Obfuscation/encoded payload detection (runs in VM)
-    install_hooks.py  Install script detection (runs in VM)
-    semgrep_supply_chain.py  Custom supply-chain rules on deps
-    guarddog_deps.py  GuardDog on dependency source code
-    (14 more scanner modules)
-  docker/
-    sandbox.py        Thin wrapper — invokes scanner-docker in VM
-  vm/
-    lima.py           VM lifecycle, provisioning
-    ssh.py            ssh_exec, ssh_copy_to, ssh_copy_from
-    safe_io.py        Boundary hardening: safe_json_loads, validate_copied_tree
+    (22 scanner modules — grype, osv, trivy, semgrep, etc.)
+
   report/
     synthesize.py     Report generation (agent or template)
     scoring.py        EPSS/KEV enrichment
-docker/                Container build context for scanner-deps image
-  Dockerfile.scanner-deps
-  scripts/             run.sh, detect.sh, download_*.sh, manifest.sh
-rules/semgrep/         Custom Semgrep supply-chain rules
-vm_scripts/            Scripts copied into the VM during provisioning
-lima/thresher.yaml     Lima VM template
+
+  vm/
+    lima.py           Lima VM lifecycle (create/start/stop — simplified)
+    firewall.py       iptables rules (Lima mode only)
+
+docker/
+  Dockerfile          Single image: harness + all scanner tools
+rules/semgrep/        Custom Semgrep supply-chain rules
+lima/thresher.yaml    Lima VM template
 ```
 
-## The #1 Rule: VM Trust Boundary
+## Architecture: CLI → Launcher → Harness
 
-**Nothing leaves the VM except log lines and the final report copy.**
+The CLI is a thin launcher. It resolves config, picks a launch mode,
+and delegates to the harness. The harness is mode-agnostic — it runs
+the same Hamilton DAG pipeline regardless of where it's running.
 
-- Scanner results stay in `/opt/scan-results/` inside the VM
-- AI findings stay in `/opt/scan-results/` inside the VM
-- Dependency manifests stay in the VM
-- The ONLY data that crosses VM→host is:
-  1. Log lines via ssh_exec stdout streaming (for tmux UI)
-  2. The final report directory via `ssh_copy_from_safe()` at scan end
-- Never `cat` a file from the VM to parse it on the host
-- Never pass structured findings data as function return values to the host
-- If you need data to flow between pipeline stages, write it to a file
-  in the VM and have the next stage read it there
+```
+CLI (host) → Launcher (direct/docker/lima) → Harness (pipeline)
+```
 
-**When adding new features, ask: "Does this data need to leave the VM?" The answer is almost always no.**
+Config flows one way: CLI serializes ScanConfig to JSON, harness
+deserializes it. The harness never reads thresher.toml directly.
 
-## Security Hardening Layers
+## Security Model
 
-These are implemented and must not be weakened:
+**Three isolation tiers (most → least):**
 
-1. **Network hardening** — zero sudo for scan user, scanner-docker wrapper,
-   hostResolver DNS control, iptables DNS pinning
-2. **Source download** — safe_clone.sh with 4-phase defense (no-checkout,
-   config lockdown, filtered checkout, post-validation)
-3. **Host boundary** — safe_json_loads (size-bounded), ssh_copy_from_safe
-   (staging + validation), stdout cap, API key tmpfs pattern
-4. **Dependency container** — single image, single invocation, no arguments,
-   --network=none, --read-only, --cap-drop=ALL
+1. **Lima+Docker** (default) — VM + iptables firewall + container sandbox
+2. **Docker** (`--docker`) — container sandbox (`--read-only`, `--cap-drop=ALL`)
+3. **Direct** (`--no-vm`) — process isolation only (dev mode)
+
+**Protections in all modes:**
+- 4-phase hardened git clone (hooks disabled, config sanitized, symlinks removed)
+- Source-only dependency downloads (no install scripts)
+- Report validation (extension whitelist, size limits, symlink rejection)
+- Credentials via environment variables only (never written to disk)
+
+**Container hardening (Docker and Lima modes):**
+- `--read-only`, `--cap-drop=ALL`, `--security-opt=no-new-privileges`
+- tmpfs mounts for writable directories
+- Non-root `thresher` user
 
 ## Scanner Modules Pattern
 
-Every scanner module follows the same pattern:
+Every scanner module uses direct subprocess calls:
 
 ```python
-def run_<tool>(vm_name, target_dir, output_dir) -> ScanResults:
-    # 1. Run the tool inside the VM (writes to output_dir/<tool>.json)
-    # 2. Check exit code
-    # 3. Return ScanResults with metadata ONLY (no findings)
-    # NEVER cat the output file back to the host
+def run_<tool>(target_dir, output_dir) -> ScanResults:
+    # 1. subprocess.run(["<tool>", ...], capture_output=True, timeout=300)
+    # 2. Write stdout to output_dir/<tool>.json
+    # 3. Return ScanResults with metadata
 ```
 
-The `parse_<tool>_output()` functions exist for in-VM use by the report
-synthesis agent — they are NOT called during the scan pipeline.
+The `parse_<tool>_output()` functions exist for report synthesis —
+they are NOT called during the scan pipeline.
 
 ## Agent Pattern
 
-Agents run as Claude Code headless inside the VM:
+Agents run Claude Code headless via subprocess:
 
 ```python
-def run_<agent>(vm_name, config) -> None:
-    # 1. Write prompt to /tmp/<agent>_prompt.txt via ssh_write_file
-    # 2. Write API key to /dev/shm/.api_key (tmpfs, read-and-delete)
-    # 3. Invoke claude -p ... via ssh_exec
-    # 4. Write findings to /opt/scan-results/<agent>-findings.json in VM
-    # 5. Return None — no data returned to host
+def run_<agent>(config, target_dir, output_dir) -> dict:
+    # 1. Write prompt to /tmp/<agent>_prompt.txt
+    # 2. subprocess.run(["claude", "-p", ...])
+    # 3. Parse JSON output
+    # 4. Return findings dict (agents return data directly)
 ```
+
+API key comes from environment (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN).
 
 ## Configurable Limits
 
@@ -110,107 +126,103 @@ All size limits live in `thresher.toml` under `[limits]`:
 
 ```toml
 [limits]
-max_json_size_mb = 10    # safe_json_loads cap
-max_file_size_mb = 50    # per-file in report copy
-max_copy_size_mb = 500   # total report copy
-max_stdout_mb = 50       # ssh_exec stdout before kill
+max_json_size_mb = 10    # JSON parse cap
+max_file_size_mb = 50    # per-file in report
+max_copy_size_mb = 500   # total report size
+max_stdout_mb = 50       # subprocess stdout cap
 ```
-
-These are read via `config.active_limits` (module-level singleton).
-When adding new limits, add to `LimitsConfig` in config.py and load
-from the `[limits]` table.
 
 ## CLI Commands
 
 ```
-thresher scan <repo_url>  # Scan a repository
-thresher build            # Build/rebuild the base VM image
-thresher stop             # Stop all VMs and tmux session
-thresher list             # List available pre-built images from releases
-thresher import <source>  # Import pre-built image (latest, v0.2.2, URL, or file)
-thresher export           # Export base VM image for distribution
-thresher                  # Show help with available commands
+thresher scan <repo_url>            # Scan (default: Lima+Docker)
+thresher scan <url> --docker        # Scan in Docker (no VM)
+thresher scan <url> --no-vm         # Scan directly on host (dev)
+thresher build                      # Build the Docker image
+thresher stop                       # Stop all VMs and tmux session
+thresher list                       # List available images from releases
+thresher import <source>            # Import image (latest, version, URL, file)
+thresher export                     # Export image for distribution
+thresher                            # Show help
 ```
 
-Key flags (on `scan`): `--skip-ai`, `--high-risk-dep`, `--tmux`, `--verbose`
-
-Legacy entry points `thresher-build` and `thresher-stop` still work.
+Key flags (on `scan`): `--skip-ai`, `--high-risk-dep`, `--docker`,
+`--no-vm`, `--tmux`, `--verbose`, `--branch`, `--depth`, `--output`
 
 ## Testing
 
 ```bash
 python -m pytest tests/unit/ tests/integration/ -v   # Full suite
 python -m pytest tests/unit/test_<module>.py -v       # Single module
-python -m pytest -m e2e                                # E2E (needs Lima)
+python -m pytest -m e2e                                # E2E (needs Docker)
 ```
 
-**Run tests after every change.** The full unit+integration suite takes <1s.
+**Run tests after every change.** The full unit+integration suite takes <2s.
 
 Test conventions:
 - Scanner tests verify parse functions with fixture data
-- Agent tests mock ssh_exec and verify:
-  - Correct files written to VM
-  - API key uses tmpfs pattern
-  - Return value is None (no data leaves VM)
-- Lima tests verify provisioning copies all hardening scripts
-- safe_io tests verify boundary validation (symlinks, size limits, etc.)
+- Scanner run tests mock subprocess.run
+- Agent tests mock subprocess.run, verify data returns (not None)
+- Harness tests mock _build_driver for Hamilton DAG
+- Launcher tests verify correct subprocess/docker commands
+- Report tests verify validation (symlinks, extensions, size limits)
 
-## Pipeline Flow
+## Pipeline Flow (Hamilton DAG)
 
 ```
-1. Load config (thresher.toml + CLI + env)
-2. Start/create VM
-3. Provision VM (tools + firewall + lockdown)
-4. Clone repo (safe_clone.sh)
-5. Pre-dep discovery agent (if AI enabled) → hidden_deps.json in VM
-6. Dependency resolution (scanner-docker container)
-7. Run 20 scanners in parallel (results stay in VM)
-8. AI analyst agent → analyst-findings.json in VM
-9. Adversarial agent → adversarial-findings.json in VM
-10. Report synthesis → report files in VM
-11. Copy report to host (ssh_copy_from_safe with validation)
-12. Stop/destroy VM
+1. Load config (CLI serializes ScanConfig to JSON)
+2. Launch harness (direct subprocess / Docker / Lima+Docker)
+3. Clone repo (4-phase hardened clone in Python)
+4. Pre-dep discovery agent (if AI enabled) → hidden_deps dict
+5. Detect ecosystems + download dependencies (source-only)
+6. Generate SBOM (Syft)
+7. Run 22 scanners in parallel (ThreadPoolExecutor)
+8. 8 AI analyst agents in parallel (if AI enabled)
+9. Adversarial verification of high-risk findings
+10. EPSS/KEV enrichment
+11. Report synthesis → /output directory
 ```
 
 ## Common Gotchas
 
-- **Circular imports**: safe_io.py and ssh.py use `_limits()` with lazy
-  import to avoid circular dependency with config.py
-- **scanner-docker stays named scanner-docker**: it's an internal VM
-  detail, not user-facing, so it wasn't renamed during the name change
-- **VM-internal paths**: `/opt/scan-results`, `/opt/target`, `/opt/deps`,
-  `/home/scanner/work` are all inside the VM — these are fine
-- **Host-side output**: `./thresher-reports` is the host directory
+- **Hamilton DAG**: pipeline.py functions use parameter names for dependency
+  wiring. Renaming a parameter changes the DAG graph.
+- **Lazy imports in pipeline.py**: All node functions use lazy imports to
+  avoid circular imports and allow the DAG to build even if downstream
+  modules aren't installed.
+- **Container paths**: `/opt/scan-results`, `/opt/target`, `/opt/deps` are
+  inside the container — these are fine.
+- **Host-side output**: `./thresher-reports` is the default host directory.
 - **Stop hooks**: The predep agent uses a Claude Code stop hook to validate
-  JSON output schema before allowing the agent to finish. Check
-  `stop_hook_active` to prevent infinite loops.
+  JSON output schema. Check `stop_hook_active` to prevent infinite loops.
 - **High-risk deps**: Hidden dependencies classified as `risk: "high"` are
   NOT downloaded by default. Use `--high-risk-dep` to opt in. Skipped
   entries are written to `skipped_high_risk.json` for the report.
+- **Config serialization**: ScanConfig.to_json() excludes credentials
+  (anthropic_api_key, oauth_token). Credentials flow via env vars.
 
 ## Adding a New Scanner
 
 1. Create `src/thresher/scanners/<tool>.py` with `run_<tool>()` and
    `parse_<tool>_output()`
-2. `run_<tool>()` executes the tool in the VM, returns ScanResults
-   (metadata only, no findings)
-3. Add to `runner.py` parallel_tasks list
-4. Add tests in `tests/unit/test_<tool>.py`
-5. Update `tests/integration/test_scanner_pipeline.py` mock count
+2. `run_<tool>()` calls subprocess.run, returns ScanResults
+3. Add to `harness/scanning.py` `_get_scanner_tasks()` list
+4. Add to `_resolve_scanner_kwargs()` if it needs special parameters
+5. Add tests in `tests/unit/test_<tool>.py`
+6. Update `tests/integration/test_scanner_pipeline.py` mock count
 
 ## Adding a New Agent
 
 1. Create `src/thresher/agents/<name>.py`
-2. Use tmpfs API key pattern (write to /dev/shm, read-and-delete)
-3. Write output to `/opt/scan-results/<name>-findings.json` in VM
-4. Return None — no data to host
-5. If structured output needed, add a stop hook for schema validation
-6. Wire into `cli.py` at the correct pipeline stage
+2. Use subprocess to call claude with API key from environment
+3. Return findings dict (agents return data directly)
+4. If structured output needed, add a stop hook for schema validation
+5. Wire into `harness/pipeline.py` at the correct DAG stage
 
 ## Git Conventions
 
-- `scanner-docker` wrapper: do not rename (internal VM detail)
-- `documentation/v2-planning/`: reference specs, do not modify during implementation
+- `documentation/v3-planning/`: reference specs for current architecture
+- `documentation/archived-planning-docs/`: old specs, do not modify
 - `docs/`: GitHub Pages site (index.html, branding.html) — not dev docs
 - Config files: `thresher.toml` (active), `thresher.toml.example` (template)
 

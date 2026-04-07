@@ -2,7 +2,7 @@
 
 ## What Is This?
 
-Thresher is a command-line tool that evaluates open source packages for security risks before you adopt them. It combines 16 deterministic security scanners with AI-powered code analysis to produce a static go/no-go report.
+Thresher is a command-line tool that evaluates open source packages for security risks before you adopt them. It combines 22 deterministic security scanners with AI-powered code analysis to produce a static go/no-go report.
 
 Think of it as a security review pipeline you can run against any GitHub repository. Instead of manually auditing code, dependency trees, and known vulnerabilities, you point this tool at a repo URL and get back a prioritized findings report with a clear recommendation: **GO**, **USE WITH CAUTION**, or **DO NOT USE**.
 
@@ -41,15 +41,15 @@ This project layers all three approaches — known vulnerability databases, stat
 ## How Does It Work (High Level)?
 
 ```
-1. ISOLATE  →  Spin up ephemeral Lima VM with egress firewall
-2. CLONE    →  Clone target repo inside the VM
-3. DOWNLOAD →  Fetch dependencies source-only in Docker containers
-4. SCAN     →  Run 16 scanners in parallel
-5. ANALYZE  →  AI agents investigate code independently (optional)
-6. VERIFY   →  Adversarial agent challenges AI findings to reduce false positives
-7. ENRICH   →  Add EPSS exploitation scores and CISA KEV status
-8. REPORT   →  Generate prioritized findings with go/no-go recommendation
-9. CLEANUP  →  Destroy the VM. Nothing persists.
+1. LAUNCH   →  CLI picks mode: Lima+Docker, Docker, or direct
+2. CLONE    →  4-phase hardened git clone (neutralizes all execution vectors)
+3. DISCOVER →  AI finds hidden dependencies (optional)
+4. DOWNLOAD →  Fetch dependencies source-only (no install scripts)
+5. SCAN     →  Run 22 scanners in parallel
+6. ANALYZE  →  8 AI analyst personas investigate in parallel (optional)
+7. VERIFY   →  Adversarial agent challenges findings to reduce false positives
+8. ENRICH   →  Add EPSS exploitation scores and CISA KEV status
+9. REPORT   →  Generate prioritized findings with go/no-go recommendation
 ```
 
 See [Architecture](architecture.md) for the full technical breakdown.
@@ -57,8 +57,8 @@ See [Architecture](architecture.md) for the full technical breakdown.
 ## Key Design Decisions
 
 - **Static reports, not dashboards** — Output is markdown and JSON files you can commit, review, and share. No running services.
-- **VM isolation** — Untrusted code runs inside a Lima VM. No shared folders, no port forwarding, egress firewall whitelist.
+- **Three isolation tiers** — Lima+Docker (VM + firewall + container), Docker (container sandbox), or direct (dev mode). Pick your security/convenience tradeoff.
 - **Source-only dependency downloads** — `pip download --no-binary`, `npm pack`, `cargo vendor`. No install scripts execute.
 - **AI is optional** — Use `--skip-ai` for free, deterministic-only scans. AI analysis requires an Anthropic API key.
 - **Cost-conscious** — The AI agents use Claude (sonnet by default). A typical scan costs a few dollars in API usage.
-- **Minimal agent count** — Two AI agents (analyst + adversarial verifier), not a swarm. Keeps costs and complexity down.
+- **8 specialist analysts** — Each with a different security perspective, running in parallel. Adversarial verification reduces false positives.
