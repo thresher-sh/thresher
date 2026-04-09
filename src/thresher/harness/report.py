@@ -117,6 +117,7 @@ def generate_report(
     from thresher.report.synthesize import (
         _generate_template_report,
         _generate_agent_report,
+        _generate_html_report,
         _build_synthesis_input,
     )
 
@@ -154,6 +155,18 @@ def generate_report(
         _generate_agent_report(
             vm_name, scan_config, scanner_results, ai_findings_dict, findings, output_dir
         )
+
+    # HTML report (always generated after markdown reports)
+    agent_succeeded = False
+    if not scan_config.skip_ai:
+        agent_succeeded = (
+            os.path.isfile(f"{output_dir}/executive-summary.md")
+            and os.path.isfile(f"{output_dir}/detailed-report.md")
+        )
+    _generate_html_report(
+        vm_name, scan_config, findings, scanner_results, output_dir,
+        agent_succeeded=agent_succeeded,
+    )
 
     # Write findings.json (machine-readable output)
     findings_path = Path(output_dir) / "findings.json"

@@ -301,12 +301,32 @@ class TestGenerateReport:
         )
         mock_validate.assert_called_once_with("/tmp/out")
 
+    @patch("thresher.report.synthesize._generate_html_report")
+    @patch("thresher.report.synthesize._generate_template_report")
+    @patch("thresher.report.synthesize._generate_agent_report")
+    @patch("thresher.report.synthesize._build_synthesis_input")
+    @patch("thresher.harness.report.validate_report_output")
+    def test_generate_report_creates_html(
+        self, mock_validate, mock_build, mock_agent, mock_template, mock_html, tmp_path
+    ):
+        """Should call _generate_html_report after markdown generation."""
+        from thresher.harness.report import generate_report
+
+        enriched = {"findings": [], "scanner_results": {}}
+        generate_report(
+            enriched, [], {"output_dir": str(tmp_path), "skip_ai": True},
+        )
+        mock_html.assert_called_once()
+        call_args = mock_html.call_args[0]
+        assert call_args[4] == str(tmp_path)  # report_dir
+
+    @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
     @patch("thresher.report.synthesize._build_synthesis_input")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_writes_analyst_files(
-        self, mock_validate, mock_build, mock_agent, mock_template, tmp_path
+        self, mock_validate, mock_build, mock_agent, mock_template, mock_html, tmp_path
     ):
         """Per-analyst findings should be saved as individual JSON files."""
         from thresher.harness.report import generate_report
@@ -327,12 +347,13 @@ class TestGenerateReport:
         assert data["analyst"] == "paranoid"
         assert data["findings"] == [{"title": "XSS"}]
 
+    @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
     @patch("thresher.report.synthesize._build_synthesis_input")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_no_analyst_files_when_none(
-        self, mock_validate, mock_build, mock_agent, mock_template, tmp_path
+        self, mock_validate, mock_build, mock_agent, mock_template, mock_html, tmp_path
     ):
         """When analyst_findings is None, no analyst files should be written."""
         from thresher.harness.report import generate_report
