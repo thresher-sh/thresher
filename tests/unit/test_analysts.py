@@ -320,6 +320,22 @@ class TestRunSingleAnalyst:
         assert cmd[idx + 1] == "50"
 
     @patch("thresher.run._popen")
+    def test_investigator_per_analyst_override_beats_global(self, mock_popen):
+        """Investigator needs 30 turns but global is 15. Per-analyst override wins."""
+        mock_popen.return_value = self._valid_proc()
+
+        config = _make_config()
+        config.analyst_max_turns = 15
+        config.analyst_max_turns_by_name = {"investigator": 30}
+
+        investigator = [a for a in ANALYST_DEFINITIONS if a["name"] == "investigator"][0]
+        _run_single_analyst(config, investigator)
+
+        cmd = mock_popen.call_args[0][0]
+        idx = cmd.index("--max-turns")
+        assert cmd[idx + 1] == "30"
+
+    @patch("thresher.run._popen")
     def test_uses_bash_in_allowed_tools(self, mock_popen):
         mock_popen.return_value = self._valid_proc()
 
