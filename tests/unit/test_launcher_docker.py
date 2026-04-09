@@ -86,6 +86,20 @@ class TestBuildDockerCmd:
         assert any("/opt/scan-results:" in t for t in tmpfs_targets)
         assert any("/opt/deps:" in t for t in tmpfs_targets)
 
+    def test_home_tmpfs_has_sufficient_size(self):
+        """home tmpfs must be >= 2GB for vulnerability DB downloads."""
+        config = _make_config()
+        cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)
+        tmpfs_indices = [i for i, v in enumerate(cmd) if v == "--tmpfs"]
+        tmpfs_targets = [cmd[i + 1] for i in tmpfs_indices]
+        home_mount = [t for t in tmpfs_targets if "/home/thresher:" in t][0]
+        # Extract size value from mount options
+        for part in home_mount.split(","):
+            if part.startswith("size="):
+                size = int(part.split("=")[1])
+                assert size >= 2 * 1024 * 1024 * 1024, f"home tmpfs too small: {size}"
+                break
+
     def test_includes_output_volume(self):
         config = _make_config()
         cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)

@@ -66,7 +66,7 @@ def _build_docker_cmd(config: ScanConfig, config_path: str, output_dir: str) -> 
         *env_flags,
         "--rm", "--read-only",
         "--tmpfs", "/tmp:rw,noexec,nosuid,size=1073741824,uid=1000,gid=1000",
-        "--tmpfs", "/home/thresher:rw,size=536870912,uid=1000,gid=1000",
+        "--tmpfs", "/home/thresher:rw,size=2147483648,uid=1000,gid=1000",
         "--tmpfs", "/opt/target:rw,size=2147483648,uid=1000,gid=1000",
         "--tmpfs", "/opt/scan-results:rw,size=1073741824,uid=1000,gid=1000",
         "--tmpfs", "/opt/deps:rw,size=2147483648,uid=1000,gid=1000",
