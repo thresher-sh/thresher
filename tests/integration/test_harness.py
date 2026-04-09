@@ -59,11 +59,12 @@ class TestHarnessPipeline:
         inputs = call_kwargs["inputs"]
 
         assert inputs["repo_url"] == "https://github.com/test/repo"
-        assert inputs["config"]["skip_ai"] is True
-        assert inputs["config"]["model"] == "opus"
-        assert inputs["config"]["depth"] == 3
-        assert inputs["config"]["high_risk_dep"] is True
-        assert inputs["config"]["branch"] == "main"
+        cfg = inputs["config"]
+        assert cfg.skip_ai is True
+        assert cfg.model == "opus"
+        assert cfg.depth == 3
+        assert cfg.high_risk_dep is True
+        assert cfg.branch == "main"
 
     def test_full_pipeline_skip_ai_false(self, tmp_path):
         """Pipeline with skip_ai=False passes correct flag in config dict."""
@@ -83,7 +84,7 @@ class TestHarnessPipeline:
 
         call_kwargs = mock_dr.execute.call_args[1]
         inputs = call_kwargs["inputs"]
-        assert inputs["config"]["skip_ai"] is False
+        assert inputs["config"].skip_ai is False
 
     def test_full_pipeline_returns_report_path(self, tmp_path):
         """run_pipeline returns the report_path from the DAG result."""

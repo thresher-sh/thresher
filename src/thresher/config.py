@@ -93,6 +93,7 @@ class ScanConfig:
     analyst_max_turns: int | None = None  # Global override for all analyst max_turns
     analyst_max_turns_by_name: dict[str, int] = field(default_factory=dict)  # Per-analyst overrides
     adversarial_max_turns: int | None = None  # Override adversarial agent max_turns (default 20)
+    predep_max_turns: int | None = None  # Override pre-dep agent max_turns (default 15)
     launch_mode: str = "lima"  # How the harness is launched: lima, docker, or direct
 
     @property
@@ -145,6 +146,7 @@ class ScanConfig:
             "analyst_max_turns": self.analyst_max_turns,
             "analyst_max_turns_by_name": self.analyst_max_turns_by_name,
             "adversarial_max_turns": self.adversarial_max_turns,
+            "predep_max_turns": self.predep_max_turns,
             "launch_mode": self.launch_mode,
             "vm": {
                 "cpus": self.vm.cpus,
@@ -174,7 +176,8 @@ class ScanConfig:
             "repo_url", "depth", "skip_ai", "verbose", "output_dir",
             "anthropic_api_key", "oauth_token", "model", "log_dir", "tmux",
             "high_risk_dep", "branch", "analyst_max_turns",
-            "analyst_max_turns_by_name", "adversarial_max_turns", "launch_mode",
+            "analyst_max_turns_by_name", "adversarial_max_turns",
+            "predep_max_turns", "launch_mode",
         }
         filtered = {k: v for k, v in data.items() if k in known_fields}
         return cls(vm=vm, limits=limits, **filtered)
@@ -240,6 +243,9 @@ def load_config(
         adversarial_data = data.get("adversarial", {})
         if "max_turns" in adversarial_data:
             config.adversarial_max_turns = adversarial_data["max_turns"]
+        predep_data = data.get("predep", {})
+        if "max_turns" in predep_data:
+            config.predep_max_turns = predep_data["max_turns"]
 
     # CLI args override config file
     config.repo_url = repo_url

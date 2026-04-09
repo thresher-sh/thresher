@@ -157,6 +157,17 @@ class TestEnrichAllFindings:
         assert result["findings"] == []
 
     @patch("thresher.harness.report.enrich_findings")
+    def test_dict_verified_findings_extracts_list(self, mock_enrich):
+        """When verified_findings is a dict with 'findings' key, extract the list."""
+        mock_enrich.return_value = [{"id": "f1"}]
+        findings_dict = {"findings": [{"id": "f1", "cve_id": "CVE-2024-1234"}]}
+        enrich_all_findings([], findings_dict)
+        call_args = mock_enrich.call_args
+        passed_findings = call_args[0][0]
+        assert isinstance(passed_findings, list)
+        assert passed_findings == [{"id": "f1", "cve_id": "CVE-2024-1234"}]
+
+    @patch("thresher.harness.report.enrich_findings")
     def test_passes_vm_name_as_empty_string(self, mock_enrich):
         """Verify harness passes empty vm_name to enrich_findings."""
         mock_enrich.return_value = []
@@ -189,15 +200,13 @@ class TestGenerateReport:
 
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
-    @patch("thresher.report.synthesize._build_synthesis_input")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_ai_enabled_uses_agent(
-        self, mock_validate, mock_build, mock_agent, mock_template
+        self, mock_validate, mock_agent, mock_template
     ):
         """When skip_ai=False, should use agent-based report generation."""
         from thresher.harness.report import generate_report
 
-        mock_build.return_value = {}
         enriched = {"findings": [], "scanner_results": {}}
         result = generate_report(
             enriched,
@@ -207,6 +216,33 @@ class TestGenerateReport:
         mock_agent.assert_called_once()
         mock_template.assert_not_called()
         assert result == "/tmp/out"
+
+    @patch("thresher.report.synthesize._generate_template_report")
+    @patch("thresher.report.synthesize._generate_agent_report")
+    @patch("thresher.harness.report.validate_report_output")
+    def test_generate_report_passes_ai_findings_as_dict(
+        self, mock_validate, mock_agent, mock_template
+    ):
+        """ai_findings arg to _generate_agent_report must be a dict, not a list."""
+        from thresher.harness.report import generate_report
+
+        findings_list = [{"title": "XSS", "severity": "high"}]
+        enriched = {"findings": findings_list, "scanner_results": {}}
+        generate_report(
+            enriched,
+            [],
+            {"output_dir": "/tmp/out", "skip_ai": False},
+        )
+        call_args = mock_agent.call_args[0]
+        # arg 3 is ai_findings — must be a dict with "findings" key, not a bare list
+        ai_findings_arg = call_args[3]
+        assert isinstance(ai_findings_arg, dict), \
+            f"ai_findings should be dict, got {type(ai_findings_arg).__name__}"
+        assert "findings" in ai_findings_arg
+        assert ai_findings_arg["findings"] == findings_list
+        # arg 4 is enriched — should be the list directly
+        enriched_arg = call_args[4]
+        assert isinstance(enriched_arg, list)
 
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")

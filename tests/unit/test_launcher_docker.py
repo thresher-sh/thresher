@@ -52,20 +52,27 @@ class TestBuildDockerCmd:
         assert cmd[idx + 1] == "thresher"
 
     def test_includes_anthropic_api_key_env(self):
-        config = _make_config()
+        config = ScanConfig(
+            repo_url="https://github.com/example/pkg",
+            output_dir="/tmp/test-output",
+            anthropic_api_key="sk-ant-test",
+        )
         cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)
-        # -e ANTHROPIC_API_KEY should appear as two consecutive elements
         assert "-e" in cmd
         e_indices = [i for i, v in enumerate(cmd) if v == "-e"]
         env_vars = [cmd[i + 1] for i in e_indices]
-        assert "ANTHROPIC_API_KEY" in env_vars
+        assert any(v.startswith("ANTHROPIC_API_KEY=") for v in env_vars)
 
     def test_includes_oauth_token_env(self):
-        config = _make_config()
+        config = ScanConfig(
+            repo_url="https://github.com/example/pkg",
+            output_dir="/tmp/test-output",
+            oauth_token="oauth-test-token",
+        )
         cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)
         e_indices = [i for i, v in enumerate(cmd) if v == "-e"]
         env_vars = [cmd[i + 1] for i in e_indices]
-        assert "CLAUDE_CODE_OAUTH_TOKEN" in env_vars
+        assert any(v.startswith("CLAUDE_CODE_OAUTH_TOKEN=") for v in env_vars)
 
     def test_includes_tmpfs_mounts(self):
         config = _make_config()
@@ -74,6 +81,7 @@ class TestBuildDockerCmd:
         tmpfs_targets = [cmd[i + 1] for i in tmpfs_indices]
         # Verify key tmpfs mounts are present
         assert any("/tmp:" in t for t in tmpfs_targets)
+        assert any("/home/thresher:" in t for t in tmpfs_targets)
         assert any("/opt/target:" in t for t in tmpfs_targets)
         assert any("/opt/scan-results:" in t for t in tmpfs_targets)
         assert any("/opt/deps:" in t for t in tmpfs_targets)

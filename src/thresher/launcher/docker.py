@@ -53,15 +53,20 @@ def _resolve_log_file(config: ScanConfig) -> str | None:
 
 
 def _build_docker_cmd(config: ScanConfig, config_path: str, output_dir: str) -> list[str]:
+    env_flags: list[str] = []
+    # Pass credentials explicitly — they may come from Keychain, not env vars
+    if config.anthropic_api_key:
+        env_flags += ["-e", f"ANTHROPIC_API_KEY={config.anthropic_api_key}"]
+    elif config.oauth_token:
+        env_flags += ["-e", f"CLAUDE_CODE_OAUTH_TOKEN={config.oauth_token}"]
     return [
         "docker", "run",
         "-v", f"{output_dir}:/output",
         "-v", f"{config_path}:/config/config.json:ro",
-        "-e", "ANTHROPIC_API_KEY",
-        "-e", "CLAUDE_CODE_OAUTH_TOKEN",
+        *env_flags,
         "--rm", "--read-only",
         "--tmpfs", "/tmp:rw,noexec,nosuid,size=1073741824,uid=1000,gid=1000",
-        "--tmpfs", "/home/thresher/.cache:rw,size=536870912,uid=1000,gid=1000",
+        "--tmpfs", "/home/thresher:rw,size=536870912,uid=1000,gid=1000",
         "--tmpfs", "/opt/target:rw,size=2147483648,uid=1000,gid=1000",
         "--tmpfs", "/opt/scan-results:rw,size=1073741824,uid=1000,gid=1000",
         "--tmpfs", "/opt/deps:rw,size=2147483648,uid=1000,gid=1000",

@@ -125,9 +125,7 @@ RUN case "${TARGETARCH}" in \
         arm64) HADOLINT_ARCH=arm64 ;; \
         *) HADOLINT_ARCH=x86_64 ;; \
     esac \
-    && HADOLINT_VERSION=$(curl -s https://api.github.com/repos/hadolint/hadolint/releases/latest \
-        | grep '"tag_name"' | cut -d'"' -f4) \
-    && curl -fsSL "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-${HADOLINT_ARCH}" \
+    && curl -fsSL "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-${HADOLINT_ARCH}" \
        -o /usr/local/bin/hadolint \
     && chmod +x /usr/local/bin/hadolint
 
@@ -151,11 +149,13 @@ RUN mkdir -p \
         /opt/scan-results \
         /opt/target \
         /opt/deps \
+        /home/thresher/.claude \
     && chown -R thresher:thresher \
         /output \
         /opt/scan-results \
         /opt/target \
-        /opt/deps
+        /opt/deps \
+        /home/thresher/.claude
 
 # ── Custom rules ──────────────────────────────────────────────────────────────
 COPY rules/ /opt/rules/

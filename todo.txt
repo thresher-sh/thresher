@@ -1,5 +1,6 @@
 All below need to be done for v0.3.0 to be ready
 [x] migrate to docker and flat app vs shell files and random complexity...
+[ ] Apply fixes for findings in @documentation/v3-planning/scan-results-review.md
 [ ] continue testing v0.3.0 docker changes (all shell scripts to python, so we need to verify everything)
 [ ] add additional ecosystems to dependency resolution
 [ ] validate scanners are all installed and update to date correctly with their dbs etc...
@@ -14,3 +15,5 @@ All below need to be done for v0.3.0 to be ready
 [ ] Review tool configs and semgrep rules
 [ ] Review agent configs and prompts
 [ ] Run against 20x repos
+[ ] TUI, drop tmux
+[ ] Headless mode (after TUI added in)

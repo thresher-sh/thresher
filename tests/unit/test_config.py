@@ -204,6 +204,31 @@ class TestLoadConfig:
         )
         assert cfg.adversarial_max_turns is None
 
+    def test_predep_max_turns_from_config(self, tmp_path: Path):
+        config_file = tmp_path / "thresher.toml"
+        config_file.write_text(textwrap.dedent("""\
+            [predep]
+            max_turns = 20
+        """))
+        cfg = load_config(
+            repo_url="https://github.com/x/y",
+            config_path=config_file,
+        )
+        assert cfg.predep_max_turns == 20
+
+    def test_predep_max_turns_default_none(self, tmp_path: Path):
+        cfg = load_config(
+            repo_url="https://github.com/x/y",
+            config_path=tmp_path / "nonexistent.toml",
+        )
+        assert cfg.predep_max_turns is None
+
+    def test_predep_max_turns_roundtrip_json(self):
+        config = ScanConfig(repo_url="https://github.com/x/y", predep_max_turns=25)
+        blob = config.to_json()
+        restored = ScanConfig.from_json(blob)
+        assert restored.predep_max_turns == 25
+
 
 class TestAiCredentials:
     def test_has_ai_credentials_api_key(self):

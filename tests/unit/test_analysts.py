@@ -509,14 +509,28 @@ class TestRunAllAnalysts:
 
 
 class TestCountTurnsFromStream:
-    def test_counts_assistant_messages(self):
+    def test_counts_only_tool_use_turns(self):
+        """Only assistant messages with tool_use blocks count as turns."""
+        stream = (
+            '{"type":"system","subtype":"init"}\n'
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"Let me check..."}]}}\n'
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"Reading file"}, {"type":"tool_use","id":"t1","name":"Read","input":{}}]}}\n'
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"Found it"}]}}\n'
+            '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Grep","input":{}}]}}\n'
+            '{"type":"result","result":"done"}\n'
+        )
+        # 2 tool-using turns, 2 text-only (not counted)
+        assert _count_turns_from_stream(stream) == 2
+
+    def test_text_only_responses_not_counted(self):
+        """Text-only assistant messages should not count as turns."""
         stream = (
             '{"type":"system","subtype":"init"}\n'
             '{"type":"assistant","message":{"content":[{"type":"text","text":"turn 1"}]}}\n'
             '{"type":"assistant","message":{"content":[{"type":"text","text":"turn 2"}]}}\n'
             '{"type":"result","result":"done"}\n'
         )
-        assert _count_turns_from_stream(stream) == 2
+        assert _count_turns_from_stream(stream) == 0
 
     def test_empty_stream(self):
         assert _count_turns_from_stream("") == 0
@@ -528,10 +542,14 @@ class TestCountTurnsFromStream:
     def test_ignores_invalid_json(self):
         stream = (
             'not json\n'
-            '{"type":"assistant","message":{"content":[]}}\n'
+            '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}]}}\n'
             'also not json\n'
         )
         assert _count_turns_from_stream(stream) == 1
+
+    def test_empty_content_not_counted(self):
+        stream = '{"type":"assistant","message":{"content":[]}}\n'
+        assert _count_turns_from_stream(stream) == 0
 
 
 class TestLogTimingSummary:

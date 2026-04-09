@@ -169,7 +169,12 @@ def _extract_result_from_stream(raw_output: str) -> str:
 
 
 def _count_turns_from_stream(raw_output: str) -> int:
-    """Count the number of assistant turns in stream-json output."""
+    """Count agentic turns in stream-json output.
+
+    Only counts assistant messages that contain tool_use blocks, matching
+    how Claude Code's --max-turns flag counts turns.  Text-only responses
+    do not count toward the turn limit.
+    """
     turns = 0
     for line in raw_output.strip().splitlines():
         line = line.strip()
@@ -178,7 +183,13 @@ def _count_turns_from_stream(raw_output: str) -> int:
         try:
             obj = json.loads(line)
             if isinstance(obj, dict) and obj.get("type") == "assistant":
-                turns += 1
+                content = obj.get("message", {}).get("content", [])
+                has_tool_use = any(
+                    isinstance(b, dict) and b.get("type") == "tool_use"
+                    for b in content
+                )
+                if has_tool_use:
+                    turns += 1
         except json.JSONDecodeError:
             continue
     return turns
@@ -384,6 +395,7 @@ def _run_single_analyst(
         or analyst_def["max_turns"]
     )
     label = f"analyst-{number}-{name}"
+    logger.info("%s using max_turns=%d", label, max_turns)
 
     prompt = _build_analyst_prompt(analyst_def)
 

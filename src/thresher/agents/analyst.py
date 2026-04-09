@@ -196,6 +196,7 @@ def run_analysis(
         return _empty_findings("Failed to write prompt file")
 
     model = config.model
+    max_turns = config.analyst_max_turns or 30
     cmd = [
         "claude",
         "-p", str(prompt_path),
@@ -203,7 +204,7 @@ def run_analysis(
         "--allowedTools", "Read,Glob,Grep",
         "--output-format", "stream-json",
         "--verbose",
-        "--max-turns", "30",
+        "--max-turns", str(max_turns),
     ]
 
     env = os.environ.copy()

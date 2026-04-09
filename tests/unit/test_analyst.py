@@ -163,3 +163,29 @@ class TestRunAnalysis:
         result = run_analysis(_make_config())
         assert isinstance(result, dict)
         assert "findings" in result
+
+    @patch("thresher.run._popen")
+    def test_uses_default_max_turns(self, mock_popen):
+        """Without config override, analyst should use default of 30."""
+        mock_popen.return_value = _mock_popen(returncode=0, stdout=self._valid_output())
+        config = _make_config()
+        assert config.analyst_max_turns is None
+
+        run_analysis(config)
+
+        cmd = mock_popen.call_args[0][0]
+        idx = cmd.index("--max-turns")
+        assert cmd[idx + 1] == "30"
+
+    @patch("thresher.run._popen")
+    def test_uses_config_max_turns(self, mock_popen):
+        """When analyst_max_turns is set in config, it should override the default."""
+        mock_popen.return_value = _mock_popen(returncode=0, stdout=self._valid_output())
+        config = _make_config()
+        config.analyst_max_turns = 45
+
+        run_analysis(config)
+
+        cmd = mock_popen.call_args[0][0]
+        idx = cmd.index("--max-turns")
+        assert cmd[idx + 1] == "45"

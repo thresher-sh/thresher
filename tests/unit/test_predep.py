@@ -179,3 +179,27 @@ class TestRunPredepDiscovery:
             result = run_predep_discovery(config)
             assert result["hidden_dependencies"] == []
             assert "failed" in result["summary"].lower()
+
+    @patch("thresher.run._popen")
+    def test_uses_default_max_turns(self, mock_popen, config):
+        """Without config override, predep should use default of 15."""
+        mock_popen.return_value = _mock_popen(returncode=0, stdout=SAMPLE_OUTPUT.encode())
+        assert config.predep_max_turns is None
+
+        run_predep_discovery(config)
+
+        cmd = mock_popen.call_args[0][0]
+        idx = cmd.index("--max-turns")
+        assert cmd[idx + 1] == "15"
+
+    @patch("thresher.run._popen")
+    def test_uses_config_max_turns(self, mock_popen, config):
+        """When predep_max_turns is set in config, it should override the default."""
+        mock_popen.return_value = _mock_popen(returncode=0, stdout=SAMPLE_OUTPUT.encode())
+        config.predep_max_turns = 25
+
+        run_predep_discovery(config)
+
+        cmd = mock_popen.call_args[0][0]
+        idx = cmd.index("--max-turns")
+        assert cmd[idx + 1] == "25"

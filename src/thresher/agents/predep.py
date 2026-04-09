@@ -128,6 +128,7 @@ def run_predep_discovery(
         return _empty_result("Failed to write prompt file")
 
     model = config.model
+    max_turns = config.predep_max_turns or 15
     cmd = [
         "claude",
         "-p", str(prompt_path),
@@ -135,7 +136,7 @@ def run_predep_discovery(
         "--allowedTools", "Read,Glob,Grep",
         "--output-format", "stream-json",
         "--verbose",
-        "--max-turns", "15",
+        "--max-turns", str(max_turns),
     ]
 
     env = os.environ.copy()

@@ -19,11 +19,20 @@ logger = logging.getLogger(__name__)
 # Global verbose flag — set by CLI at startup
 _verbose = False
 
+# Global stdout cap — set by CLI/harness at startup from config.limits
+_max_stdout_bytes = 50 * 1024 * 1024  # default 50 MB
+
 
 def set_verbose(enabled: bool) -> None:
     """Set global verbose mode. Called once by CLI at startup."""
     global _verbose
     _verbose = enabled
+
+
+def set_max_stdout(limit_bytes: int) -> None:
+    """Set max stdout bytes before killing a subprocess. 0 = unlimited."""
+    global _max_stdout_bytes
+    _max_stdout_bytes = limit_bytes
 
 
 def _popen(*args: Any, **kwargs: Any) -> subprocess.Popen:
@@ -62,22 +71,34 @@ def run(
 
     proc = _popen(
         cmd,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         **kwargs,
     )
 
     stdout_chunks: list[bytes] = []
+    stdout_size = 0
     try:
         for raw_line in proc.stdout:
             stdout_chunks.append(raw_line)
+            stdout_size += len(raw_line)
+            if _max_stdout_bytes and stdout_size > _max_stdout_bytes:
+                proc.kill()
+                proc.wait()
+                logger.warning(
+                    "[%s] killed — stdout limit exceeded (%d bytes > %d byte limit)",
+                    label, stdout_size, _max_stdout_bytes,
+                )
+                break
             line = raw_line.decode(errors="replace").rstrip()
             if line:
                 if _verbose:
                     logger.info("[%s] %s", label, line)
                 else:
                     logger.debug("[%s] %s", label, line)
-        proc.wait(timeout=timeout)
+        else:
+            proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()

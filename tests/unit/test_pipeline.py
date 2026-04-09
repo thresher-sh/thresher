@@ -24,27 +24,54 @@ def test_pipeline_dag_builds():
 
 def test_pipeline_skip_ai_short_circuits():
     """When skip_ai=True, AI stages return empty results."""
-    config_dict = {"skip_ai": True, "high_risk_dep": False}
-    result = pipeline.hidden_deps(cloned_path="/opt/target", config=config_dict)
+    config = ScanConfig(skip_ai=True, high_risk_dep=False)
+    result = pipeline.hidden_deps(cloned_path="/opt/target", config=config)
     assert result == {}
 
 
 def test_pipeline_skip_ai_analyst_findings():
     """When skip_ai=True, analyst_findings returns empty list."""
-    config_dict = {"skip_ai": True}
+    config = ScanConfig(skip_ai=True)
     result = pipeline.analyst_findings(
         cloned_path="/opt/target", deps_path="/opt/deps",
-        scan_results=[], config=config_dict,
+        scan_results=[], config=config,
     )
     assert result == []
 
 
 def test_pipeline_verified_findings_empty_input():
     """When analyst_findings is empty, verified_findings passes through."""
-    config_dict = {"skip_ai": False}
+    config = ScanConfig(skip_ai=False)
     result = pipeline.verified_findings(
-        analyst_findings=[], cloned_path="/opt/target", config=config_dict,
+        analyst_findings=[], cloned_path="/opt/target", config=config,
     )
+    assert result == []
+
+
+def test_pipeline_verified_findings_unwraps_dict():
+    """When adversarial returns {'findings': [...]}, verified_findings extracts the list."""
+    config = ScanConfig(skip_ai=False)
+    findings_list = [{"title": "CVE-2024-1234", "cve_id": "CVE-2024-1234"}]
+    with patch("thresher.agents.adversarial.run_adversarial_verification",
+               return_value={"findings": findings_list}):
+        result = pipeline.verified_findings(
+            analyst_findings=[{"title": "something"}],
+            cloned_path="/opt/target",
+            config=config,
+        )
+    assert result == findings_list
+
+
+def test_pipeline_verified_findings_handles_none():
+    """When adversarial returns None, verified_findings returns empty list."""
+    config = ScanConfig(skip_ai=False)
+    with patch("thresher.agents.adversarial.run_adversarial_verification",
+               return_value=None):
+        result = pipeline.verified_findings(
+            analyst_findings=[{"title": "something"}],
+            cloned_path="/opt/target",
+            config=config,
+        )
     assert result == []
 
 

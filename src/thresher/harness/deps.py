@@ -232,16 +232,16 @@ def download_go(target_dir: str, deps_dir: str) -> None:
 
 # ── Download: Hidden deps ─────────────────────────────────────────────────────
 
-def download_hidden(hidden_deps: dict, deps_dir: str, config: dict) -> None:
+def download_hidden(hidden_deps: dict, deps_dir: str, config) -> None:
     """Download hidden dependencies discovered by the pre-dep AI agent.
 
-    Skips high-risk entries unless config['high_risk_dep'] is True.
+    Skips high-risk entries unless config.high_risk_dep is True.
     Writes skipped entries to hidden/skipped_high_risk.json.
     """
     output_dir = Path(deps_dir) / "hidden"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    high_risk_dep: bool = bool(config.get("high_risk_dep", False))
+    high_risk_dep: bool = bool(config.high_risk_dep if not isinstance(config, dict) else config.get("high_risk_dep", False))
     deps_list: list[dict] = hidden_deps.get("hidden_dependencies", [])
 
     if not deps_list:

@@ -35,6 +35,12 @@ disk = 30    # GB
 # paranoid = 60
 # shadowcatcher = 80
 
+[predep]
+# Override max turns for the pre-dependency discovery agent (default 15).
+# The predep agent scans source code for hidden dependency sources before
+# dependency resolution.
+# max_turns = 15
+
 [adversarial]
 # Override max turns for the adversarial verification agent (default 20).
 # The adversarial agent reviews high-risk analyst findings and attempts
