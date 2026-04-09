@@ -10,7 +10,7 @@ from thresher.harness.report import (
     enrich_all_findings,
     ALLOWED_EXTENSIONS,
 )
-from thresher.scanners.models import ScanResults
+from thresher.scanners.models import Finding, ScanResults
 
 
 class TestValidateReportOutput:
@@ -175,6 +175,38 @@ class TestEnrichAllFindings:
         call_args = mock_enrich.call_args
         # Second positional arg should be vm_name=""
         assert call_args[1]["vm_name"] == ""
+
+    @patch("thresher.harness.report.enrich_findings")
+    def test_includes_scanner_findings(self, mock_enrich):
+        """Scanner findings from ScanResults should be merged into enrichment."""
+        mock_enrich.return_value = []
+        scanner_finding = Finding(
+            id="grype-CVE-2024-1234",
+            source_tool="grype",
+            category="sca",
+            severity="high",
+            cvss_score=8.1,
+            cve_id="CVE-2024-1234",
+            title="Test vuln",
+            description="desc",
+            file_path=None,
+            line_number=None,
+            package_name="requests",
+            package_version="2.25.0",
+            fix_version="2.32.0",
+            raw_output={},
+        )
+        sr = ScanResults(
+            tool_name="grype", execution_time_seconds=5.0, exit_code=0,
+            findings=[scanner_finding],
+        )
+        ai_findings = [{"title": "AI finding", "source_tool": "ai_analysis"}]
+        enrich_all_findings([sr], ai_findings)
+        passed = mock_enrich.call_args[0][0]
+        sources = [f.get("source_tool") for f in passed]
+        assert "grype" in sources
+        assert "ai_analysis" in sources
+        assert len(passed) == 2
 
 
 class TestGenerateReport:

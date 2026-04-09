@@ -82,6 +82,12 @@ def enrich_all_findings(
         all_findings = list(verified_findings)
     else:
         all_findings = []
+
+    # Merge scanner findings into the combined list
+    for sr in (scan_results or []):
+        for finding in sr.findings:
+            all_findings.append(finding.to_dict())
+
     enriched = enrich_findings(all_findings, vm_name="")
 
     scanner_results_map = {r.tool_name: r for r in (scan_results or [])}
