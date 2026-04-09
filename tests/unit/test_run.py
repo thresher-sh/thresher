@@ -10,10 +10,11 @@ import pytest
 from thresher.run import run, set_max_stdout, set_verbose
 
 
-def _mock_popen(returncode=0, stdout=b""):
+def _mock_popen(returncode=0, stdout=b"", stderr=b""):
     """Create a mock that behaves like subprocess.Popen."""
     mock = MagicMock()
     mock.stdout = iter(stdout.splitlines(keepends=True)) if stdout else iter([])
+    mock.stderr = iter(stderr.splitlines(keepends=True)) if stderr else iter([])
     mock.returncode = returncode
     mock.wait.return_value = returncode
     mock.kill = MagicMock()
@@ -119,3 +120,16 @@ class TestRun:
         mock_popen.return_value = _mock_popen(returncode=1, stdout=b"err\n")
         result = run(["false"], label="test")
         assert result.returncode == 1
+
+    @patch("thresher.run._popen")
+    def test_stderr_separated_from_stdout(self, mock_popen):
+        """stderr should not corrupt stdout — they are captured separately."""
+        mock_popen.return_value = _mock_popen(
+            returncode=0,
+            stdout=b'{"valid": "json"}\n',
+            stderr=b"WARNING: deprecated flag\n",
+        )
+        result = run(["tool"], label="test")
+        assert result.stdout == b'{"valid": "json"}\n'
+        assert b"WARNING" not in result.stdout
+        assert b"WARNING" in result.stderr

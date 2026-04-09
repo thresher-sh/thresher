@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import threading
 import time
 from typing import Any
 
@@ -73,9 +74,22 @@ def run(
         cmd,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         **kwargs,
     )
+
+    # Drain stderr in a background thread to prevent deadlocks
+    stderr_chunks: list[bytes] = []
+
+    def _drain_stderr():
+        for raw_line in proc.stderr:
+            stderr_chunks.append(raw_line)
+            line = raw_line.decode(errors="replace").rstrip()
+            if line:
+                logger.debug("[%s:stderr] %s", label, line)
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
 
     stdout_chunks: list[bytes] = []
     stdout_size = 0
@@ -104,7 +118,9 @@ def run(
         proc.wait()
         logger.warning("[%s] killed after %ds timeout", label, timeout)
 
+    stderr_thread.join(timeout=5)
     stdout = b"".join(stdout_chunks)
+    stderr = b"".join(stderr_chunks)
 
     if proc.returncode in ok_codes:
         logger.info("[%s] done (exit %d)", label, proc.returncode)
@@ -115,7 +131,7 @@ def run(
         args=cmd,
         returncode=proc.returncode,
         stdout=stdout,
-        stderr=b"",
+        stderr=stderr,
     )
 
 
