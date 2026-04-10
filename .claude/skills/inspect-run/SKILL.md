@@ -43,3 +43,4 @@ Generate a report whith CRITICAL/HIGH/MEDIUM/LOW issues.
 
 Generate a list at end of report of unit tests that if they existed today would fail because of these findings. And then think of any additional unit tests we should ad on edge cases around these areas that we wouldn't have thought of otherwise.
 
+Write the report to a file.

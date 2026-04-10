@@ -210,12 +210,13 @@ class TestEnrichAllFindings:
 
 
 class TestGenerateReport:
+    @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
     @patch("thresher.report.synthesize._build_synthesis_input")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_skip_ai_uses_template(
-        self, mock_validate, mock_build, mock_agent, mock_template
+        self, mock_validate, mock_build, mock_agent, mock_template, mock_html
     ):
         """When skip_ai=True, should use template-based report generation."""
         from thresher.harness.report import generate_report
@@ -230,11 +231,12 @@ class TestGenerateReport:
         mock_agent.assert_not_called()
         assert result == "/tmp/out"
 
+    @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_ai_enabled_uses_agent(
-        self, mock_validate, mock_agent, mock_template
+        self, mock_validate, mock_agent, mock_template, mock_html
     ):
         """When skip_ai=False, should use agent-based report generation."""
         from thresher.harness.report import generate_report
@@ -249,11 +251,12 @@ class TestGenerateReport:
         mock_template.assert_not_called()
         assert result == "/tmp/out"
 
+    @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_passes_ai_findings_as_dict(
-        self, mock_validate, mock_agent, mock_template
+        self, mock_validate, mock_agent, mock_template, mock_html
     ):
         """ai_findings arg to _generate_agent_report must be a dict, not a list."""
         from thresher.harness.report import generate_report
@@ -276,12 +279,13 @@ class TestGenerateReport:
         enriched_arg = call_args[4]
         assert isinstance(enriched_arg, list)
 
+    @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
     @patch("thresher.report.synthesize._build_synthesis_input")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_creates_output_dir(
-        self, mock_validate, mock_build, mock_agent, mock_template
+        self, mock_validate, mock_build, mock_agent, mock_template, mock_html
     ):
         """Should create output_dir if it doesn't exist."""
         from thresher.harness.report import generate_report
@@ -299,12 +303,13 @@ class TestGenerateReport:
             assert os.path.exists(output_path)
             assert result == output_path
 
+    @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
     @patch("thresher.report.synthesize._build_synthesis_input")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_default_output_dir(
-        self, mock_validate, mock_build, mock_agent, mock_template, tmp_path
+        self, mock_validate, mock_build, mock_agent, mock_template, mock_html, tmp_path
     ):
         """Should use /output as default when not specified."""
         from thresher.harness.report import generate_report
@@ -315,12 +320,13 @@ class TestGenerateReport:
         assert result == str(tmp_path)
         assert (tmp_path / "findings.json").exists()
 
+    @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize._generate_agent_report")
     @patch("thresher.report.synthesize._build_synthesis_input")
     @patch("thresher.harness.report.validate_report_output")
     def test_generate_report_calls_validate(
-        self, mock_validate, mock_build, mock_agent, mock_template
+        self, mock_validate, mock_build, mock_agent, mock_template, mock_html
     ):
         """Should always call validate_report_output after generation."""
         from thresher.harness.report import generate_report

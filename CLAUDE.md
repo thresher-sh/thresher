@@ -9,9 +9,10 @@ Always use the task tool to plan out and do what you need and use it to hold you
 - Always add and update tests anytime you change code
 - If you get an error when running something or reported by a user, write a test case covering that error first. Run test and make sure it fails... Then fix code to make test pass.
 
-## Other
+## Git
 
-Do git commits for each incremental feature, but NEVER use claude coauthored tags...
+- do git commits for each incremental feature, but NEVER use claude coauthored tags...
+- Keep commit messages short and sweet one liners. No big git bodies.
 
 ## Coding Conventions
 
@@ -131,6 +132,20 @@ Do git commits for each incremental feature, but NEVER use claude coauthored tag
 ### Say When You Don't Understand
 - Admitting confusion is strength, not weakness.
 - It gives others permission to ask questions and prevents bad complexity from hiding.
+
+### Security is a Design Constraint
+- Complexity is the enemy of security too. Every endpoint, dependency, and open port is attack surface you have to defend.
+- Default to deny. Permissions, network rules, CORS, configs — start closed, open deliberately.
+- Auth, crypto, and session management are not DIY projects. Use well-vetted libraries.
+- Validate all input at the trust boundary, encode at the output. Everything from outside is hostile.
+- Think in blast radius. Least privilege everything. One compromised key shouldn't unlock the whole system.
+
+### Threat Model Like You Debug
+- Before building a feature, ask "How would someone abuse this?" — same as asking where it will break.
+- Dependencies are code you didn't write and probably didn't read. Pin versions, audit what matters.
+- Secrets don't go in code, logs, or error messages. No exceptions.
+- Secure your defaults everywhere — don't run as root, don't commit `.env`, don't connect local to prod.
+- Vulnerabilities cluster. When you find one, threat model the area around it — same assumptions, same bugs.
 
 
 ## What This Is
