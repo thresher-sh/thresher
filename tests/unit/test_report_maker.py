@@ -1,0 +1,110 @@
+"""Tests for the report-maker agent runner."""
+
+import json
+import subprocess
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+from thresher.config import ScanConfig
+
+
+def _mock_stream_output(report_data: dict) -> bytes:
+    """Build stream-json output containing a result with report data."""
+    lines = [
+        json.dumps({"type": "assistant", "message": {"content": [{"text": "Working..."}]}}),
+        json.dumps({"type": "result", "result": json.dumps(report_data)}),
+    ]
+    return "\n".join(lines).encode()
+
+
+def _valid_report_data():
+    return {
+        "meta": {
+            "scan_date": "2026-04-02", "thresher_version": "v0.2.2",
+            "scanner_count": "22", "analyst_count": "8",
+            "repo_name": "owner/repo", "repo_url": "https://github.com/owner/repo",
+        },
+        "verdict": {"label": "LOW RISK", "severity": "low", "callout": "No issues."},
+        "counts": {
+            "total_scanner": "0", "total_ai": "0", "p0": "0", "critical": "0",
+            "high_scanner": "0", "high_ai": "0", "medium": "0", "low": "0",
+        },
+        "executive_summary": "<p>Clean.</p>",
+        "mitigations": [],
+        "scanner_findings": [],
+        "ai_findings": [],
+        "trust_signals": [],
+        "dependency_upgrades": [],
+        "remediation": None,
+        "pipeline": {"scanners": ["grype"], "analysts": [], "notes": ""},
+        "config": {"show_cta": "true", "show_remediation": "false"},
+    }
+
+
+@patch("thresher.agents.report_maker.run_cmd")
+def test_builds_correct_cmd(mock_run):
+    from thresher.agents.report_maker import run_report_maker
+
+    mock_run.return_value = MagicMock(
+        stdout=_mock_stream_output(_valid_report_data()),
+        returncode=0,
+    )
+    config = ScanConfig(repo_url="https://github.com/owner/repo", model="sonnet")
+    run_report_maker(config, "/tmp/output")
+
+    cmd = mock_run.call_args[0][0]
+    assert "claude" in cmd[0]
+    assert "--bare" in cmd
+    assert "--settings" in cmd
+    assert "--output-format" in cmd
+    assert "stream-json" in cmd
+    assert "--verbose" in cmd
+
+
+@patch("thresher.agents.report_maker.run_cmd")
+def test_parses_valid_output(mock_run):
+    from thresher.agents.report_maker import run_report_maker
+
+    expected = _valid_report_data()
+    mock_run.return_value = MagicMock(
+        stdout=_mock_stream_output(expected),
+        returncode=0,
+    )
+    config = ScanConfig(repo_url="https://github.com/owner/repo")
+    result = run_report_maker(config, "/tmp/output")
+
+    assert result is not None
+    assert result["meta"]["repo_name"] == "owner/repo"
+    assert result["verdict"]["severity"] == "low"
+
+
+@patch("thresher.agents.report_maker.run_cmd")
+def test_returns_none_on_failure(mock_run):
+    from thresher.agents.report_maker import run_report_maker
+
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=3600)
+    config = ScanConfig(repo_url="https://github.com/owner/repo")
+    result = run_report_maker(config, "/tmp/output")
+
+    assert result is None
+
+
+@patch("thresher.agents.report_maker.run_cmd")
+def test_uses_custom_max_turns(mock_run):
+    from thresher.agents.report_maker import run_report_maker
+
+    mock_run.return_value = MagicMock(
+        stdout=_mock_stream_output(_valid_report_data()),
+        returncode=0,
+    )
+    config = ScanConfig(
+        repo_url="https://github.com/owner/repo",
+        report_maker_max_turns=25,
+    )
+    run_report_maker(config, "/tmp/output")
+
+    cmd = mock_run.call_args[0][0]
+    turns_idx = cmd.index("--max-turns") + 1
+    assert cmd[turns_idx] == "25"
