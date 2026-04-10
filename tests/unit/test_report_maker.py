@@ -56,7 +56,7 @@ def test_builds_correct_cmd(mock_run):
 
     cmd = mock_run.call_args[0][0]
     assert "claude" in cmd[0]
-    assert "--bare" in cmd
+    assert "--bare" not in cmd
     assert "--settings" in cmd
     assert "--output-format" in cmd
     assert "stream-json" in cmd

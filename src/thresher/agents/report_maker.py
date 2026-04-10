@@ -44,11 +44,17 @@ def _resolve_hooks_settings() -> Path:
 
     settings = {
         "hooks": {
-            "Stop": [{
-                "type": "command",
-                "command": str(hook_script.resolve()),
-                "timeout": 15,
-            }]
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": str(hook_script.resolve()),
+                            "timeout": 15,
+                        }
+                    ]
+                }
+            ]
         }
     }
     settings_path = Path(tempfile.mktemp(suffix="_report_hooks_settings.json"))
@@ -211,7 +217,6 @@ def run_report_maker(
             "claude",
             "-p", str(prompt_path),
             "--model", model,
-            "--bare",
             "--settings", str(settings_path),
             "--allowedTools", tools,
             "--output-format", "stream-json",

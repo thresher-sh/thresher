@@ -2,9 +2,13 @@
   "hooks": {
     "Stop": [
       {
-        "type": "command",
-        "command": "src/thresher/agents/hooks/report/validate_json_output.sh",
-        "timeout": 15
+        "hooks": [
+          {
+            "type": "command",
+            "command": "src/thresher/agents/hooks/report/validate_json_output.sh",
+            "timeout": 15
+          }
+        ]
       }
     ]
   }
