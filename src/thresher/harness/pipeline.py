@@ -93,12 +93,38 @@ def enriched_findings(scan_results: list[ScanResults],
     return enrich_all_findings(scan_results, verified_findings)
 
 
-def report_path(enriched_findings: dict, scan_results: list[ScanResults],
-                analyst_findings: list[dict], config: ScanConfig) -> str:
-    """Synthesize final report and write to output directory."""
-    from thresher.harness.report import generate_report
-    return generate_report(enriched_findings, scan_results, config,
-                           analyst_findings=analyst_findings)
+def report_data(enriched_findings: dict, scan_results: list[ScanResults],
+                analyst_findings: list[dict], config: ScanConfig) -> dict:
+    """Run report-maker agent to produce structured JSON for the HTML report.
+
+    Note: Uses config.output_dir rather than a Hamilton-wired output_dir input.
+    This matches the pattern used by other agent-calling nodes in this pipeline.
+    """
+    if config.skip_ai:
+        from thresher.harness.report import build_fallback_report_data
+        findings = enriched_findings.get("findings", [])
+        return build_fallback_report_data(config, findings)
+
+    from thresher.agents.report_maker import run_report_maker
+    result = run_report_maker(config, config.output_dir or "/opt/scan-results")
+    if result is None:
+        from thresher.harness.report import build_fallback_report_data
+        findings = enriched_findings.get("findings", [])
+        return build_fallback_report_data(config, findings)
+    return result
+
+
+def report_html(report_data: dict, enriched_findings: dict,
+                scan_results: list[ScanResults], analyst_findings: list[dict],
+                config: ScanConfig) -> str:
+    """Render final HTML report and finalize output directory."""
+    from thresher.harness.report import render_report, finalize_output
+
+    output_dir = config.output_dir or "/opt/scan-results"
+    html_path = render_report(report_data, output_dir)
+    finalize_output(enriched_findings, scan_results, config,
+                    analyst_findings=analyst_findings)
+    return html_path
 
 
 # ── Pipeline Runner ─────────────────────────────────────────────────
@@ -122,10 +148,10 @@ def run_pipeline(scan_config: ScanConfig) -> str:
 
     logger.info("Executing pipeline DAG")
     result = dr.execute(
-        final_vars=["report_path"],
+        final_vars=["report_html"],
         inputs=inputs,
     )
 
-    report = result["report_path"]
+    report = result["report_html"]
     logger.info("Pipeline complete — report at %s", report)
     return report

@@ -10,7 +10,7 @@ def test_pipeline_module_has_required_functions():
     required = [
         "cloned_path", "ecosystems", "hidden_deps", "deps_path",
         "sbom_path", "scan_results", "analyst_findings",
-        "verified_findings", "enriched_findings", "report_path",
+        "verified_findings", "enriched_findings", "report_data", "report_html",
     ]
     for name in required:
         assert hasattr(pipeline, name), f"Missing DAG node: {name}"
@@ -84,7 +84,7 @@ def test_run_pipeline_calls_hamilton_execute(tmp_path):
     )
     with patch("thresher.harness.pipeline._build_driver") as mock_build:
         mock_dr = MagicMock()
-        mock_dr.execute.return_value = {"report_path": str(tmp_path / "report")}
+        mock_dr.execute.return_value = {"report_html": str(tmp_path / "report")}
         mock_build.return_value = mock_dr
         pipeline.run_pipeline(config)
         mock_dr.execute.assert_called_once()

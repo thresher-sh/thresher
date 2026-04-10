@@ -205,6 +205,54 @@ def generate_report(
     return output_dir
 
 
+def finalize_output(
+    enriched_findings: dict[str, Any],
+    scan_results: list[ScanResults],
+    config,
+    *,
+    analyst_findings: list[dict[str, Any]] | None = None,
+) -> None:
+    """Handle non-HTML output responsibilities: findings.json, scanner copies, validation.
+
+    This extracts the file management duties from generate_report() so
+    the pipeline can call render_report() for HTML and finalize_output()
+    for everything else independently.
+    """
+    output_dir = config.output_dir if not isinstance(config, dict) else config.get("output_dir", "/output")
+    os.makedirs(output_dir, exist_ok=True)
+
+    findings: list[dict[str, Any]] = enriched_findings.get("findings", [])
+
+    # Write findings.json (machine-readable output)
+    findings_path = Path(output_dir) / "findings.json"
+    findings_path.write_text(json.dumps(findings, indent=2, default=str))
+
+    # Save per-analyst findings as individual JSON files
+    if analyst_findings:
+        scan_results_dir = Path(output_dir) / "scan-results"
+        scan_results_dir.mkdir(exist_ok=True)
+        for af in analyst_findings:
+            number = af.get("analyst_number", 0)
+            name = af.get("analyst", "unknown")
+            filename = f"analyst-{number:02d}-{name}.json"
+            (scan_results_dir / filename).write_text(
+                json.dumps(af, indent=2, default=str)
+            )
+            logger.info("Saved per-analyst findings: %s", filename)
+
+    # Copy raw scanner output files into scan-results/ subfolder
+    scan_results_dir = Path(output_dir) / "scan-results"
+    scan_results_dir.mkdir(exist_ok=True)
+    source_dir = Path("/opt/scan-results")
+    if source_dir.exists():
+        import shutil
+        for f in source_dir.iterdir():
+            if f.is_file():
+                shutil.copy2(f, scan_results_dir / f.name)
+
+    validate_report_output(output_dir)
+
+
 def render_report(
     report_data: dict,
     output_dir: str,
