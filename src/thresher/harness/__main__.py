@@ -48,9 +48,11 @@ def main(argv: list[str] | None = None) -> None:
 
     logger.info("Harness starting — repo=%s output=%s", config.repo_url, config.output_dir)
     logger.info(
-        "Agent limits — analyst_max_turns=%s predep_max_turns=%s adversarial_max_turns=%s max_stdout_mb=%s",
+        "Agent limits — analyst=%s predep=%s adversarial=%s "
+        "report_maker=%s synthesize=%s max_stdout_mb=%s",
         config.analyst_max_turns, config.predep_max_turns,
-        config.adversarial_max_turns, config.limits.max_stdout_mb,
+        config.adversarial_max_turns, config.report_maker_max_turns,
+        config.synthesize_max_turns, config.limits.max_stdout_mb,
     )
 
     # Pipeline execution will be wired in Task 3

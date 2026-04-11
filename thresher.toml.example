@@ -22,11 +22,15 @@ cpus = 4
 memory = 8   # GB
 disk = 30    # GB
 
+# Agent max_turns precedence: named section -> [analysts] -> YAML default
+# If [analysts] max_turns is set, every other agent (predep, adversarial,
+# report_maker, synthesize) inherits that value unless they have their own
+# explicit section. This lets you configure once for the simple case.
+
 [analysts]
-# Override the max turns for all analyst agents. Each analyst has a default
-# defined in its YAML definition (typically 30). Set this to apply a global
-# override — useful for larger repos that need more investigation depth.
-# max_turns = 50
+# Global max_turns for all analyst agents. Also acts as the fallback for
+# every other agent below if they don't define their own section.
+# max_turns = 100
 
 # Per-analyst overrides by name. These take precedence over the global max_turns.
 # Analyst names: paranoid, behaviorist, investigator, pentester-vulns,
@@ -36,17 +40,24 @@ disk = 30    # GB
 # shadowcatcher = 80
 
 [predep]
-# Override max turns for the pre-dependency discovery agent (default 15).
-# The predep agent scans source code for hidden dependency sources before
-# dependency resolution.
-# max_turns = 15
+# Override max turns for the pre-dependency discovery agent.
+# Falls back to [analysts] max_turns when unset, then to YAML default (15).
+# max_turns = 50
 
 [adversarial]
-# Override max turns for the adversarial verification agent (default 20).
-# The adversarial agent reviews high-risk analyst findings and attempts
-# to construct benign explanations. With web research enabled, it may
-# need more turns for thorough validation.
-# max_turns = 30
+# Override max turns for the adversarial verification agent.
+# Falls back to [analysts] max_turns when unset, then to YAML default (20).
+# max_turns = 200
+
+[report_maker]
+# Override max turns for the report-maker agent (produces structured HTML data).
+# Falls back to [analysts] max_turns when unset, then to YAML default (15).
+# max_turns = 100
+
+[synthesize]
+# Override max turns for the synthesis agent (produces markdown reports).
+# Falls back to [analysts] max_turns when unset, then to YAML default (75).
+# max_turns = 150
 
 [limits]
 # Host boundary hardening limits. These control the maximum sizes of

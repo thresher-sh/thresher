@@ -95,6 +95,7 @@ class ScanConfig:
     adversarial_max_turns: int | None = None  # Override adversarial agent max_turns (default 20)
     predep_max_turns: int | None = None  # Override pre-dep agent max_turns (default 15)
     report_maker_max_turns: int | None = None  # Override report-maker agent max_turns (default 15)
+    synthesize_max_turns: int | None = None  # Override synthesize agent max_turns (default 75)
     launch_mode: str = "lima"  # How the harness is launched: lima, docker, or direct
 
     @property
@@ -149,6 +150,7 @@ class ScanConfig:
             "adversarial_max_turns": self.adversarial_max_turns,
             "predep_max_turns": self.predep_max_turns,
             "report_maker_max_turns": self.report_maker_max_turns,
+            "synthesize_max_turns": self.synthesize_max_turns,
             "launch_mode": self.launch_mode,
             "vm": {
                 "cpus": self.vm.cpus,
@@ -179,7 +181,8 @@ class ScanConfig:
             "anthropic_api_key", "oauth_token", "model", "log_dir", "tmux",
             "high_risk_dep", "branch", "analyst_max_turns",
             "analyst_max_turns_by_name", "adversarial_max_turns",
-            "predep_max_turns", "report_maker_max_turns", "launch_mode",
+            "predep_max_turns", "report_maker_max_turns",
+            "synthesize_max_turns", "launch_mode",
         }
         filtered = {k: v for k, v in data.items() if k in known_fields}
         return cls(vm=vm, limits=limits, **filtered)
@@ -251,6 +254,23 @@ def load_config(
         report_maker_data = data.get("report_maker", {})
         if "max_turns" in report_maker_data:
             config.report_maker_max_turns = report_maker_data["max_turns"]
+        synthesize_data = data.get("synthesize", {})
+        if "max_turns" in synthesize_data:
+            config.synthesize_max_turns = synthesize_data["max_turns"]
+
+        # Precedence: named section -> [analysts] -> default
+        # Any per-agent max_turns left unset falls back to the global
+        # [analysts] value so users can configure once and have it apply
+        # everywhere.
+        if config.analyst_max_turns is not None:
+            for attr in (
+                "predep_max_turns",
+                "adversarial_max_turns",
+                "report_maker_max_turns",
+                "synthesize_max_turns",
+            ):
+                if getattr(config, attr) is None:
+                    setattr(config, attr, config.analyst_max_turns)
 
     # CLI args override config file
     config.repo_url = repo_url

@@ -254,6 +254,86 @@ class TestLoadConfig:
         restored = ScanConfig.from_json(json_str)
         assert restored.report_maker_max_turns == 25
 
+    def test_synthesize_max_turns_from_config(self, tmp_path: Path):
+        config_file = tmp_path / "thresher.toml"
+        config_file.write_text(textwrap.dedent("""\
+            [synthesize]
+            max_turns = 90
+        """))
+        cfg = load_config(
+            repo_url="https://github.com/x/y",
+            config_path=config_file,
+        )
+        assert cfg.synthesize_max_turns == 90
+
+    def test_synthesize_max_turns_default_none(self, tmp_path: Path):
+        cfg = load_config(
+            repo_url="https://github.com/x/y",
+            config_path=tmp_path / "nonexistent.toml",
+        )
+        assert cfg.synthesize_max_turns is None
+
+    def test_synthesize_max_turns_roundtrip_json(self):
+        config = ScanConfig(
+            repo_url="https://github.com/test/repo", synthesize_max_turns=42,
+        )
+        restored = ScanConfig.from_json(config.to_json())
+        assert restored.synthesize_max_turns == 42
+
+    # ── max_turns precedence: named -> analysts -> default ──────────
+
+    def test_predep_falls_back_to_analysts_max_turns(self, tmp_path: Path):
+        """When [predep] is missing but [analysts] is set, predep uses the analysts value."""
+        config_file = tmp_path / "thresher.toml"
+        config_file.write_text(textwrap.dedent("""\
+            [analysts]
+            max_turns = 75
+        """))
+        cfg = load_config(
+            repo_url="https://github.com/x/y",
+            config_path=config_file,
+        )
+        assert cfg.analyst_max_turns == 75
+        assert cfg.predep_max_turns == 75
+        assert cfg.adversarial_max_turns == 75
+        assert cfg.report_maker_max_turns == 75
+        assert cfg.synthesize_max_turns == 75
+
+    def test_named_section_overrides_analysts_max_turns(self, tmp_path: Path):
+        """An explicit [predep] / [report_maker] section beats the [analysts] fallback."""
+        config_file = tmp_path / "thresher.toml"
+        config_file.write_text(textwrap.dedent("""\
+            [analysts]
+            max_turns = 75
+
+            [predep]
+            max_turns = 20
+
+            [report_maker]
+            max_turns = 150
+        """))
+        cfg = load_config(
+            repo_url="https://github.com/x/y",
+            config_path=config_file,
+        )
+        assert cfg.analyst_max_turns == 75
+        assert cfg.predep_max_turns == 20
+        assert cfg.adversarial_max_turns == 75   # falls back
+        assert cfg.report_maker_max_turns == 150
+        assert cfg.synthesize_max_turns == 75    # falls back
+
+    def test_no_max_turns_anywhere_yields_none(self, tmp_path: Path):
+        """If neither named nor [analysts] is set, all per-agent fields stay None."""
+        cfg = load_config(
+            repo_url="https://github.com/x/y",
+            config_path=tmp_path / "nonexistent.toml",
+        )
+        assert cfg.analyst_max_turns is None
+        assert cfg.predep_max_turns is None
+        assert cfg.adversarial_max_turns is None
+        assert cfg.report_maker_max_turns is None
+        assert cfg.synthesize_max_turns is None
+
 
 class TestAiCredentials:
     def test_has_ai_credentials_api_key(self):
