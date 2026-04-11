@@ -200,22 +200,37 @@ def run_report_maker(
     config: ScanConfig,
     output_dir: str,
     *,
-    target_dir: str = "/opt/scan-results",
+    target_dir: str | None = None,
 ) -> dict[str, Any] | None:
-    """Run the report maker agent to generate structured report data.
+    """Run the report maker agent to format the scan into structured JSON.
 
-    The agent reads scan results from target_dir and produces a JSON object
-    conforming to the report schema. A stop hook validates the output against
-    the schema before accepting it.
+    The agent runs as the LAST step in the pipeline. By that point the
+    output directory contains every artifact the report needs to consume:
+
+      - executive-summary.md, detailed-report.md, synthesis-findings.md
+        (written by the synthesize agent — the "judge")
+      - adversarial-verification.md
+      - findings.json
+      - scan-results/analyst-NN-*.json + analyst-NN-*.md
+      - scan-results/<scanner>.json (22 of them)
+      - scan-results/dep_resolution.json
+
+    The agent's job is to read those files and produce the structured
+    JSON that the HTML template renders. A stop hook validates the
+    output against the schema before accepting it.
 
     Args:
         config: Scan configuration.
-        output_dir: Directory where the report will be written.
-        target_dir: Directory containing scan results (cwd for the agent).
+        output_dir: Report output directory — used as the agent's cwd
+            so all the artifacts above are reachable via relative paths.
+        target_dir: (Deprecated) historical override; if not provided,
+            defaults to ``output_dir``.
 
     Returns:
         Parsed report data dict, or None on failure.
     """
+    if target_dir is None:
+        target_dir = output_dir
     definition = _load_definition()
     prompt_text = definition["prompt"]
     tools = ",".join(definition["tools"])

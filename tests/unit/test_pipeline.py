@@ -121,3 +121,33 @@ def test_synthesized_reports_invokes_agent():
         )
     mock_agent.assert_called_once()
     assert result is True
+
+
+def test_dag_orders_synthesize_before_report_data():
+    """Architectural contract: synthesize is the judge, report-maker is
+    the formatter that reads its output. The DAG MUST run synthesize
+    before report_data, and report_data MUST list synthesized_reports as
+    a parameter so Hamilton enforces the ordering."""
+    import inspect
+    sig = inspect.signature(pipeline.report_data)
+    params = list(sig.parameters.keys())
+    assert "synthesized_reports" in params, (
+        f"report_data must depend on synthesized_reports for DAG ordering; "
+        f"current params: {params}"
+    )
+
+
+def test_dag_orders_stage_artifacts_before_report_data():
+    """report-maker reads scanner outputs, per-analyst files, and synthesis
+    markdown from the report directory. Those have to be staged there
+    BEFORE report-maker runs."""
+    import inspect
+    assert hasattr(pipeline, "staged_artifacts"), (
+        "pipeline must define a staged_artifacts node that copies "
+        "scanner + per-analyst outputs into output_dir before report-maker"
+    )
+    sig = inspect.signature(pipeline.report_data)
+    assert "staged_artifacts" in sig.parameters, (
+        "report_data must depend on staged_artifacts so the DAG enforces "
+        "ordering"
+    )

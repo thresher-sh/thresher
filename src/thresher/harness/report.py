@@ -136,31 +136,43 @@ def enrich_all_findings(
     }
 
 
-def finalize_output(
+def stage_artifacts(
     enriched_findings: dict[str, Any],
-    scan_results: list[ScanResults],
     config,
     *,
     analyst_findings: list[dict[str, Any]] | None = None,
-) -> None:
-    """Handle non-HTML output responsibilities: findings.json, scanner copies, validation.
+    scan_results_source: str = "/opt/scan-results",
+    deps_source: str = "/opt/deps",
+) -> str:
+    """Stage every artifact the report-maker / synthesize agents need to
+    read into the report output directory.
 
-    This extracts the file management duties from generate_report() so
-    the pipeline can call render_report() for HTML and finalize_output()
-    for everything else independently.
+    Runs BEFORE the report-maker / render_report stages so the agents can
+    treat ``output_dir`` as the single source of truth. Specifically:
+
+      - writes ``findings.json`` (enriched findings list)
+      - writes per-analyst ``analyst-NN-<name>.{json,md}`` files
+      - copies the 22 raw scanner outputs into ``scan-results/``
+      - copies ``dep_resolution.json`` from the deps dir alongside them
+
+    Returns the resolved output directory path so DAG callers can use it
+    as a value-typed dependency for downstream nodes.
     """
     output_dir = config.output_dir if not isinstance(config, dict) else config.get("output_dir", "/output")
     os.makedirs(output_dir, exist_ok=True)
+    out_path = Path(output_dir)
+    scan_results_dir = out_path / "scan-results"
+    scan_results_dir.mkdir(exist_ok=True)
 
     findings: list[dict[str, Any]] = enriched_findings.get("findings", [])
 
-    # Write findings.json (machine-readable output)
-    findings_path = Path(output_dir) / "findings.json"
-    findings_path.write_text(json.dumps(findings, indent=2, default=str))
+    # Machine-readable enriched findings — used by both downstream agents
+    # and any humans poking at the report tree.
+    (out_path / "findings.json").write_text(
+        json.dumps(findings, indent=2, default=str)
+    )
 
-    # Save per-analyst findings as individual JSON + markdown overview files.
-    # The markdown overview makes findings reviewable without parsing JSON
-    # and matches what the apply-report skill expects.
+    # Per-analyst output: JSON for the formatter, markdown for humans.
     if analyst_findings:
         from thresher.agents.analysts import (
             ANALYST_DEFINITIONS,
@@ -168,17 +180,13 @@ def finalize_output(
         )
 
         analyst_def_by_name = {d["name"]: d for d in ANALYST_DEFINITIONS}
-        scan_results_dir = Path(output_dir) / "scan-results"
-        scan_results_dir.mkdir(exist_ok=True)
         for af in analyst_findings:
             number = af.get("analyst_number", 0)
             name = af.get("analyst", "unknown")
             base = f"analyst-{number:02d}-{name}"
-
             (scan_results_dir / f"{base}.json").write_text(
                 json.dumps(af, indent=2, default=str)
             )
-
             analyst_def = analyst_def_by_name.get(name)
             if analyst_def is not None:
                 try:
@@ -189,18 +197,43 @@ def finalize_output(
                         "Failed to format analyst markdown for %s",
                         name, exc_info=True,
                     )
-            logger.info("Saved per-analyst findings: %s.json/.md", base)
+            logger.info("Staged per-analyst output: %s.json/.md", base)
 
-    # Copy raw scanner output files into scan-results/ subfolder
-    scan_results_dir = Path(output_dir) / "scan-results"
-    scan_results_dir.mkdir(exist_ok=True)
-    source_dir = Path("/opt/scan-results")
+    # Copy raw scanner outputs into scan-results/.
+    source_dir = Path(scan_results_source)
     if source_dir.exists():
         import shutil
         for f in source_dir.iterdir():
             if f.is_file():
                 shutil.copy2(f, scan_results_dir / f.name)
 
+    # Copy dep_resolution.json so the report-maker can surface degraded
+    # ecosystems in pipeline.notes.
+    dep_status = Path(deps_source) / "dep_resolution.json"
+    if dep_status.is_file():
+        import shutil
+        shutil.copy2(dep_status, scan_results_dir / "dep_resolution.json")
+
+    return str(out_path)
+
+
+def finalize_output(
+    config,
+    *,
+    staged_dir: str | None = None,
+) -> None:
+    """Final post-render pass: validate the staged report tree.
+
+    All artifact staging now happens in :func:`stage_artifacts` (called
+    earlier in the DAG so the report-maker / synthesize agents can read
+    everything). This function only runs the boundary validator that
+    rejects symlinks, oversized files, and disallowed extensions.
+    """
+    output_dir = staged_dir or (
+        config.output_dir
+        if not isinstance(config, dict)
+        else config.get("output_dir", "/output")
+    )
     validate_report_output(output_dir)
 
 

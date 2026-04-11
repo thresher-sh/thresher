@@ -108,3 +108,24 @@ def test_uses_custom_max_turns(mock_run):
     cmd = mock_run.call_args[0][0]
     turns_idx = cmd.index("--max-turns") + 1
     assert cmd[turns_idx] == "25"
+
+
+@patch("thresher.agents.report_maker.run_cmd")
+def test_cwd_defaults_to_output_dir(mock_run, tmp_path):
+    """Architectural change: report-maker now runs as a final formatter
+    that consumes everything in the report output directory (synthesis
+    markdown, per-analyst files, scanner JSONs). Its cwd must be the
+    output dir, not /opt/scan-results."""
+    from thresher.agents.report_maker import run_report_maker
+
+    mock_run.return_value = MagicMock(
+        stdout=_mock_stream_output(_valid_report_data()),
+        returncode=0,
+    )
+    config = ScanConfig(repo_url="https://github.com/owner/repo")
+    run_report_maker(config, str(tmp_path))
+
+    kwargs = mock_run.call_args[1]
+    assert kwargs.get("cwd") == str(tmp_path), (
+        f"report-maker cwd should be output_dir, got {kwargs.get('cwd')!r}"
+    )

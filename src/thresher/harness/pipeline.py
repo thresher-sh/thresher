@@ -116,17 +116,48 @@ def _inject_dep_resolution_notes(result: dict) -> dict:
     return result
 
 
-def report_data(enriched_findings: dict, scan_results: list[ScanResults],
-                analyst_findings: list[dict], config: ScanConfig) -> dict:
-    """Run report-maker agent to produce structured JSON for the HTML report.
+def staged_artifacts(synthesized_reports: bool,
+                     enriched_findings: dict,
+                     analyst_findings: list[dict],
+                     config: ScanConfig) -> str:
+    """Stage every report artifact into config.output_dir BEFORE the
+    report-maker runs.
 
-    Note: Uses config.output_dir rather than a Hamilton-wired output_dir input.
-    This matches the pattern used by other agent-calling nodes in this pipeline.
+    The DAG dependency on ``synthesized_reports`` enforces ordering: the
+    synthesis agent writes ``executive-summary.md`` etc. directly into
+    ``config.output_dir``, then this node copies the scanner outputs and
+    per-analyst files alongside them so the formatter has everything in
+    one place. Returns the resolved output dir for downstream nodes.
+    """
+    from thresher.harness.report import stage_artifacts as _stage
+    _ = synthesized_reports  # ordering only
+    return _stage(
+        enriched_findings,
+        config,
+        analyst_findings=analyst_findings,
+    )
+
+
+def report_data(staged_artifacts: str,
+                enriched_findings: dict,
+                scan_results: list[ScanResults],
+                analyst_findings: list[dict],
+                synthesized_reports: bool,
+                config: ScanConfig) -> dict:
+    """Run report-maker agent to FORMAT the staged scan into structured JSON.
+
+    Hard-depends on ``staged_artifacts`` and ``synthesized_reports`` so
+    the report directory contains every file the agent needs to consume:
+    synthesis markdown (the "judge" output), per-analyst files, raw
+    scanner JSONs, dep_resolution.json. The agent then packages these
+    into the JSON the HTML template renders.
     """
     from thresher.harness.report import (
         build_fallback_report_data,
         validate_report_data,
     )
+
+    _ = synthesized_reports  # ordering only — value flows via staged_artifacts
 
     if config.skip_ai:
         findings = enriched_findings.get("findings", [])
@@ -135,7 +166,7 @@ def report_data(enriched_findings: dict, scan_results: list[ScanResults],
         )
 
     from thresher.agents.report_maker import run_report_maker
-    result = run_report_maker(config, config.output_dir or "/opt/scan-results")
+    result = run_report_maker(config, staged_artifacts)
     if result is None:
         findings = enriched_findings.get("findings", [])
         logger.warning(
@@ -199,23 +230,20 @@ def synthesized_reports(verified_findings: list[dict],
         return False
 
 
-def report_html(report_data: dict, enriched_findings: dict,
-                scan_results: list[ScanResults], analyst_findings: list[dict],
-                synthesized_reports: bool, config: ScanConfig) -> str:
-    """Render final HTML report and finalize output directory.
+def report_html(report_data: dict, staged_artifacts: str,
+                config: ScanConfig) -> str:
+    """Render final HTML report and run the boundary validator.
 
-    Depends on ``synthesized_reports`` so the synthesis markdown files are
-    written before ``finalize_output`` runs ``validate_report_output`` over
-    the directory. The bool return value of synthesized_reports is unused
-    here — it exists to enforce DAG ordering.
+    By the time this node runs, ``staged_artifacts`` has already copied
+    every per-analyst file, scanner output, and dep_resolution.json into
+    ``config.output_dir`` and ``report_data`` has produced the structured
+    JSON. All that's left is rendering ``report.html`` + ``report_data.json``
+    and validating the directory tree.
     """
     from thresher.harness.report import render_report, finalize_output
 
-    _ = synthesized_reports  # ordering only — value is recorded by the agent
-    output_dir = config.output_dir or "/opt/scan-results"
-    html_path = render_report(report_data, output_dir)
-    finalize_output(enriched_findings, scan_results, config,
-                    analyst_findings=analyst_findings)
+    html_path = render_report(report_data, staged_artifacts)
+    finalize_output(config, staged_dir=staged_artifacts)
     return html_path
 
 

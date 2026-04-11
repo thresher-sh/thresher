@@ -313,11 +313,13 @@ class TestEnrichAllFindings:
             result = enrich_all_findings([], findings)
         assert result["findings"][0]["composite_priority"] == "critical"
 
-class TestFinalizeOutputMarkdown:
-    """finalize_output writes per-analyst markdown next to per-analyst JSON."""
+class TestStageArtifacts:
+    """stage_artifacts writes per-analyst markdown + JSON, copies scanner
+    outputs, and copies dep_resolution.json into the report dir BEFORE
+    the report-maker runs."""
 
     def test_writes_per_analyst_markdown(self, tmp_path):
-        from thresher.harness.report import finalize_output
+        from thresher.harness.report import stage_artifacts
         from thresher.config import ScanConfig
 
         config = ScanConfig(output_dir=str(tmp_path), skip_ai=True)
@@ -344,8 +346,11 @@ class TestFinalizeOutputMarkdown:
                 "risk_score": 7,
             },
         ]
-        finalize_output(
-            {"findings": []}, [], config, analyst_findings=analyst_data,
+        stage_artifacts(
+            {"findings": []}, config,
+            analyst_findings=analyst_data,
+            scan_results_source=str(tmp_path / "missing_scan_src"),
+            deps_source=str(tmp_path / "missing_deps_src"),
         )
         md_path = tmp_path / "scan-results" / "analyst-01-paranoid.md"
         assert md_path.exists(), "per-analyst markdown not written"
@@ -355,14 +360,60 @@ class TestFinalizeOutputMarkdown:
         assert "app.py" in body
 
     def test_no_markdown_when_no_analysts(self, tmp_path):
-        from thresher.harness.report import finalize_output
+        from thresher.harness.report import stage_artifacts
         from thresher.config import ScanConfig
 
         config = ScanConfig(output_dir=str(tmp_path), skip_ai=True)
-        finalize_output({"findings": []}, [], config, analyst_findings=None)
+        stage_artifacts(
+            {"findings": []}, config,
+            analyst_findings=None,
+            scan_results_source=str(tmp_path / "missing"),
+            deps_source=str(tmp_path / "missing2"),
+        )
         sr = tmp_path / "scan-results"
         md_files = list(sr.glob("analyst-*.md")) if sr.exists() else []
         assert md_files == []
+
+    def test_copies_dep_resolution_json(self, tmp_path):
+        """The dep_resolution.json status file must end up alongside the
+        scanner outputs so the report-maker can read it from one place."""
+        from thresher.harness.report import stage_artifacts
+        from thresher.config import ScanConfig
+
+        deps_src = tmp_path / "deps"
+        deps_src.mkdir()
+        (deps_src / "dep_resolution.json").write_text(json.dumps({
+            "ecosystems": {"python": {"status": "failed", "reason": "x"}},
+        }))
+
+        config = ScanConfig(output_dir=str(tmp_path / "out"), skip_ai=True)
+        stage_artifacts(
+            {"findings": []}, config,
+            analyst_findings=None,
+            scan_results_source=str(tmp_path / "missing_scan"),
+            deps_source=str(deps_src),
+        )
+        copied = tmp_path / "out" / "scan-results" / "dep_resolution.json"
+        assert copied.exists()
+        loaded = json.loads(copied.read_text())
+        assert loaded["ecosystems"]["python"]["status"] == "failed"
+
+    def test_writes_findings_json(self, tmp_path):
+        from thresher.harness.report import stage_artifacts
+        from thresher.config import ScanConfig
+
+        config = ScanConfig(output_dir=str(tmp_path), skip_ai=True)
+        stage_artifacts(
+            {"findings": [{"id": "x", "severity": "high"}]},
+            config,
+            analyst_findings=None,
+            scan_results_source=str(tmp_path / "missing"),
+            deps_source=str(tmp_path / "missing2"),
+        )
+        f = tmp_path / "findings.json"
+        assert f.exists()
+        loaded = json.loads(f.read_text())
+        assert loaded[0]["severity"] == "high"
 
 
 class TestValidateReportData:
@@ -402,7 +453,7 @@ class TestValidateReportData:
         assert validate_report_data("not a dict") == set(_REQUIRED_REPORT_DATA_KEYS)
         assert validate_report_data([]) == set(_REQUIRED_REPORT_DATA_KEYS)
 
-    def test_pipeline_falls_back_when_report_maker_returns_partial_data(self):
+    def test_pipeline_falls_back_when_report_maker_returns_partial_data(self, tmp_path):
         """Regression for the inspection report C1: report_maker hits
         error_max_turns and returns a dict missing required keys. The
         pipeline must reject it and use build_fallback_report_data."""
@@ -412,7 +463,7 @@ class TestValidateReportData:
         config = ScanConfig(
             repo_url="https://github.com/x/y",
             anthropic_api_key="sk-ant-test",
-            output_dir="/tmp/test-output",
+            output_dir=str(tmp_path),
         )
         # Simulate report_maker emitting a fragment that's missing required
         # top-level keys (verdict, counts, pipeline) — exactly what happens
@@ -426,9 +477,11 @@ class TestValidateReportData:
         with patch("thresher.agents.report_maker.run_report_maker",
                    return_value=partial):
             result = pipeline.report_data(
+                staged_artifacts=str(tmp_path),
                 enriched_findings={"findings": [], "scanner_results": {}},
                 scan_results=[],
                 analyst_findings=[],
+                synthesized_reports=True,
                 config=config,
             )
         # Fallback report has every required key
@@ -439,7 +492,7 @@ class TestValidateReportData:
         assert "counts" in result
         assert "pipeline" in result
 
-    def test_pipeline_uses_report_maker_when_complete(self):
+    def test_pipeline_uses_report_maker_when_complete(self, tmp_path):
         """When report_maker returns a complete dict, pipeline passes it through."""
         from thresher.harness import pipeline
         from thresher.config import ScanConfig
@@ -447,7 +500,7 @@ class TestValidateReportData:
         config = ScanConfig(
             repo_url="https://github.com/x/y",
             anthropic_api_key="sk-ant-test",
-            output_dir="/tmp/test-output",
+            output_dir=str(tmp_path),
         )
         complete = {
             "meta": {"scan_date": "2026-04-10", "repo_name": "x/y"},
@@ -461,9 +514,11 @@ class TestValidateReportData:
         with patch("thresher.agents.report_maker.run_report_maker",
                    return_value=complete):
             result = pipeline.report_data(
+                staged_artifacts=str(tmp_path),
                 enriched_findings={"findings": [], "scanner_results": {}},
                 scan_results=[],
                 analyst_findings=[],
+                synthesized_reports=True,
                 config=config,
             )
         assert result is complete
@@ -533,9 +588,11 @@ class TestDepResolutionNotes:
              patch("thresher.harness.report._dep_resolution_dir",
                    return_value=str(deps_dir)):
             result = pipeline.report_data(
+                staged_artifacts=str(tmp_path),
                 enriched_findings={"findings": [], "scanner_results": {}},
                 scan_results=[],
                 analyst_findings=[],
+                synthesized_reports=True,
                 config=config,
             )
         notes = result.get("pipeline", {}).get("notes", "")
