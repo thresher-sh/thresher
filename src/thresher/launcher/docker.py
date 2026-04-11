@@ -3,10 +3,10 @@
 import logging
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from thresher.config import ScanConfig
+from thresher.fs import tempfile_with
 
 logger = logging.getLogger(__name__)
 DOCKER_IMAGE = "thresher:latest"
@@ -18,12 +18,9 @@ def launch_docker(config: ScanConfig) -> int:
     output_dir = str(Path(config.output_dir).resolve())
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        f.write(config.to_json())
-        config_path = f.name
-    cmd = _build_docker_cmd(config, config_path, output_dir)
-    logger.info("Launching harness (docker mode): output=%s", output_dir)
-    try:
+    with tempfile_with(config.to_json(), suffix=".json") as config_path:
+        cmd = _build_docker_cmd(config, str(config_path), output_dir)
+        logger.info("Launching harness (docker mode): output=%s", output_dir)
         # Stream container output to both terminal and log file
         log_file = _resolve_log_file(config)
         if log_file:
@@ -39,8 +36,6 @@ def launch_docker(config: ScanConfig) -> int:
         else:
             result = subprocess.run(cmd)
             return result.returncode
-    finally:
-        Path(config_path).unlink(missing_ok=True)
 
 
 def _resolve_log_file(config: ScanConfig) -> str | None:

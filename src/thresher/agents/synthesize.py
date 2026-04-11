@@ -9,13 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from thresher.config import ScanConfig
+from thresher.fs import tempfile_with
 from thresher.run import run as run_cmd
 
 logger = logging.getLogger(__name__)
@@ -190,11 +190,8 @@ def run_synthesize_agent(
 
     # Build and write prompt from YAML definition template
     synthesis_prompt = _build_synthesis_prompt(definition, report_dir, input_path)
-    prompt_path = Path(tempfile.mktemp(suffix="_synthesis_prompt.txt"))
 
-    try:
-        prompt_path.write_text(synthesis_prompt)
-
+    with tempfile_with(synthesis_prompt, suffix="_synthesis_prompt.txt") as prompt_path:
         model = config.model
         cmd = [
             "claude",
@@ -226,21 +223,15 @@ def run_synthesize_agent(
 
         logger.info("Synthesis agent completed: exit_code=%d", exit_code)
 
-        # Verify expected output files exist
-        agent_succeeded = (
-            os.path.isfile(f"{report_dir}/executive-summary.md")
-            and os.path.isfile(f"{report_dir}/detailed-report.md")
-        )
+    # Verify expected output files exist
+    agent_succeeded = (
+        os.path.isfile(f"{report_dir}/executive-summary.md")
+        and os.path.isfile(f"{report_dir}/detailed-report.md")
+    )
 
-        if agent_succeeded:
-            logger.info("Synthesis agent produced expected report files")
-        else:
-            logger.warning("Synthesis agent did not produce expected files")
+    if agent_succeeded:
+        logger.info("Synthesis agent produced expected report files")
+    else:
+        logger.warning("Synthesis agent did not produce expected files")
 
-        return agent_succeeded
-
-    finally:
-        try:
-            prompt_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+    return agent_succeeded

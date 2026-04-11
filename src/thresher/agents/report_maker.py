@@ -10,13 +10,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from thresher.config import ScanConfig
+from thresher.fs import tempfile_with
 from thresher.run import run as run_cmd
 
 logger = logging.getLogger(__name__)
@@ -48,12 +49,11 @@ def _load_definition() -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def _resolve_hooks_settings() -> Path:
-    """Write a temporary settings.json with absolute path to the hook script.
+def _build_hooks_settings_json() -> str:
+    """Return the settings.json content for the report-maker stop hook.
 
-    The shipped settings.json uses a relative path that only works from the
-    repo root. This function resolves it to an absolute path so the hook
-    works regardless of cwd (important inside Docker).
+    Resolves the hook script path to an absolute path so the hook works
+    regardless of cwd (important inside Docker).
     """
     hook_script = _HOOKS_DIR / "validate_json_output.sh"
     if not hook_script.exists():
@@ -74,9 +74,7 @@ def _resolve_hooks_settings() -> Path:
             ]
         }
     }
-    settings_path = Path(tempfile.mktemp(suffix="_report_hooks_settings.json"))
-    settings_path.write_text(json.dumps(settings))
-    return settings_path
+    return json.dumps(settings)
 
 
 def _extract_result_from_stream(raw_output: str) -> str:
@@ -238,23 +236,8 @@ def run_report_maker(
     # Resolve max_turns: config override > YAML default
     max_turns = getattr(config, "report_maker_max_turns", None) or definition["max_turns"]
 
-    prompt_path = Path(tempfile.mktemp(suffix="_report_maker_prompt.txt"))
-    settings_path = None
     try:
-        prompt_path.write_text(prompt_text)
-        settings_path = _resolve_hooks_settings()
-
-        model = config.model
-        cmd = [
-            "claude",
-            "-p", str(prompt_path),
-            "--model", model,
-            "--settings", str(settings_path),
-            "--allowedTools", tools,
-            "--output-format", "stream-json",
-            "--verbose",
-            "--max-turns", str(max_turns),
-        ]
+        hooks_json = _build_hooks_settings_json()
 
         env = os.environ.copy()
         ai_env = config.ai_env()
@@ -263,15 +246,35 @@ def run_report_maker(
         # guess (the relative default broke when cwd != project root).
         env["REPORT_SCHEMA_PATH"] = _resolve_schema_path()
 
-        logger.info("Invoking report maker agent (max_turns=%d)", max_turns)
-        proc = run_cmd(
-            cmd,
-            label="report-maker",
-            env=env,
-            timeout=3600,
-            cwd=target_dir,
-        )
-        raw_output = proc.stdout.decode(errors="replace")
+        with ExitStack() as stack:
+            prompt_path = stack.enter_context(
+                tempfile_with(prompt_text, suffix="_report_maker_prompt.txt")
+            )
+            settings_path = stack.enter_context(
+                tempfile_with(hooks_json, suffix="_report_hooks_settings.json")
+            )
+
+            model = config.model
+            cmd = [
+                "claude",
+                "-p", str(prompt_path),
+                "--model", model,
+                "--settings", str(settings_path),
+                "--allowedTools", tools,
+                "--output-format", "stream-json",
+                "--verbose",
+                "--max-turns", str(max_turns),
+            ]
+
+            logger.info("Invoking report maker agent (max_turns=%d)", max_turns)
+            proc = run_cmd(
+                cmd,
+                label="report-maker",
+                env=env,
+                timeout=3600,
+                cwd=target_dir,
+            )
+            raw_output = proc.stdout.decode(errors="replace")
 
         result = _parse_report_output(raw_output)
         if result is not None:
@@ -283,15 +286,3 @@ def run_report_maker(
     except Exception as exc:
         logger.error("Report maker agent failed: %s", exc)
         return None
-
-    finally:
-        # Clean up temp files
-        try:
-            prompt_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-        if settings_path is not None:
-            try:
-                settings_path.unlink(missing_ok=True)
-            except Exception:
-                pass

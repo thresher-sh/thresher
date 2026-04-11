@@ -19,13 +19,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
 from thresher.run import run as run_cmd
 
 from thresher.config import ScanConfig
+from thresher.fs import tempfile_with
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +107,8 @@ installs, well-known CDN URLs
 """
 
 
-def _resolve_hooks_settings() -> Path:
-    """Write a temporary settings.json with absolute path to the hook script.
+def _build_hooks_settings_json() -> str:
+    """Return the settings.json content for the predep stop hook.
 
     Resolves the hook script path to an absolute path so the hook works
     regardless of cwd (important inside Docker).
@@ -131,9 +132,7 @@ def _resolve_hooks_settings() -> Path:
             ]
         }
     }
-    settings_path = Path(tempfile.mktemp(suffix="_predep_hooks_settings.json"))
-    settings_path.write_text(json.dumps(settings))
-    return settings_path
+    return json.dumps(settings)
 
 
 def run_predep_discovery(
@@ -153,62 +152,53 @@ def run_predep_discovery(
     Returns:
         Dict with discovered hidden dependencies.
     """
-    prompt_path = Path(tempfile.mktemp(suffix="_predep_prompt.txt"))
-    settings_path = None
     try:
-        prompt_path.write_text(PREDEP_PROMPT)
-    except Exception:
-        logger.warning("Failed to write predep prompt", exc_info=True)
-        return _empty_result("Failed to write prompt file")
-
-    try:
-        settings_path = _resolve_hooks_settings()
+        hooks_json: str | None = _build_hooks_settings_json()
     except Exception:
         logger.warning("Failed to resolve predep hook settings", exc_info=True)
         # Continue without the hook — output validation will still
         # happen in _parse_predep_output, just without retry
+        hooks_json = None
 
     model = config.model
     max_turns = config.predep_max_turns or 15
-    cmd = [
-        "claude",
-        "-p", str(prompt_path),
-        "--model", model,
-        "--allowedTools", "Read,Glob,Grep",
-        "--output-format", "stream-json",
-        "--verbose",
-        "--max-turns", str(max_turns),
-    ]
-    if settings_path is not None:
-        cmd.extend(["--settings", str(settings_path)])
 
     env = os.environ.copy()
     ai_env = config.ai_env()
     env.update(ai_env)
 
     logger.info("Running pre-dependency discovery agent")
-    try:
-        proc = run_cmd(
-            cmd,
-            label="predep",
-            env=env,
-            timeout=600,
-            cwd=target_dir,
+    with ExitStack() as stack:
+        prompt_path = stack.enter_context(
+            tempfile_with(PREDEP_PROMPT, suffix="_predep_prompt.txt")
         )
-        stdout = proc.stdout.decode(errors="replace")
-    except Exception as exc:
-        logger.error("Pre-dep discovery agent failed: %s", exc)
-        return _empty_result(f"Agent invocation failed: {exc}")
-    finally:
+        cmd = [
+            "claude",
+            "-p", str(prompt_path),
+            "--model", model,
+            "--allowedTools", "Read,Glob,Grep",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--max-turns", str(max_turns),
+        ]
+        if hooks_json is not None:
+            settings_path = stack.enter_context(
+                tempfile_with(hooks_json, suffix="_predep_hooks_settings.json")
+            )
+            cmd.extend(["--settings", str(settings_path)])
+
         try:
-            prompt_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-        if settings_path is not None:
-            try:
-                settings_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            proc = run_cmd(
+                cmd,
+                label="predep",
+                env=env,
+                timeout=600,
+                cwd=target_dir,
+            )
+            stdout = proc.stdout.decode(errors="replace")
+        except Exception as exc:
+            logger.error("Pre-dep discovery agent failed: %s", exc)
+            return _empty_result(f"Agent invocation failed: {exc}")
 
     result = _parse_predep_output(stdout)
 

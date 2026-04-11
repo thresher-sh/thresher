@@ -2,10 +2,10 @@
 
 import logging
 import subprocess
-import tempfile
 from pathlib import Path
 
 from thresher.config import ScanConfig
+from thresher.fs import tempfile_with
 
 logger = logging.getLogger(__name__)
 BASE_VM_NAME = "thresher-base"
@@ -16,12 +16,9 @@ def launch_lima(config: ScanConfig) -> int:
     """Launch the harness inside Docker running in a Lima VM. Returns exit code."""
     _ensure_vm_running()
     _apply_firewall()
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        f.write(config.to_json())
-        config_path = f.name
-    try:
+    with tempfile_with(config.to_json(), suffix=".json") as config_path:
         subprocess.run(
-            ["limactl", "copy", config_path, f"{BASE_VM_NAME}:/opt/config.json"],
+            ["limactl", "copy", str(config_path), f"{BASE_VM_NAME}:/opt/config.json"],
             check=True,
         )
         docker_cmd = _build_lima_docker_cmd(config)
@@ -29,8 +26,6 @@ def launch_lima(config: ScanConfig) -> int:
         if result.returncode == 0:
             _copy_report_to_host(config.output_dir)
         return result.returncode
-    finally:
-        Path(config_path).unlink(missing_ok=True)
 
 
 def _ensure_vm_running() -> None:

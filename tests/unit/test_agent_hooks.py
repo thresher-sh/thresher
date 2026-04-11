@@ -578,54 +578,38 @@ class TestAdversarialHook:
 # ---------------------------------------------------------------------------
 
 
-class TestResolveHooksSettings:
+class TestBuildHooksSettingsJson:
     def test_predep_settings_has_correct_hook_path(self):
-        from thresher.agents.predep import _resolve_hooks_settings
-        path = _resolve_hooks_settings()
-        try:
-            settings = json.loads(path.read_text())
-            hook_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
-            assert "predep" in hook_cmd
-            assert hook_cmd.endswith("validate_json_output.sh")
-            assert os.path.isfile(hook_cmd)
-        finally:
-            path.unlink(missing_ok=True)
+        from thresher.agents.predep import _build_hooks_settings_json
+        settings = json.loads(_build_hooks_settings_json())
+        hook_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert "predep" in hook_cmd
+        assert hook_cmd.endswith("validate_json_output.sh")
+        assert os.path.isfile(hook_cmd)
 
     def test_analyst_settings_has_correct_hook_path(self):
-        from thresher.agents.analysts import _resolve_hooks_settings
-        path = _resolve_hooks_settings()
-        try:
-            settings = json.loads(path.read_text())
-            hook_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
-            assert "analyst" in hook_cmd
-            assert hook_cmd.endswith("validate_json_output.sh")
-            assert os.path.isfile(hook_cmd)
-        finally:
-            path.unlink(missing_ok=True)
+        from thresher.agents.analysts import _build_hooks_settings_json
+        settings = json.loads(_build_hooks_settings_json())
+        hook_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert "analyst" in hook_cmd
+        assert hook_cmd.endswith("validate_json_output.sh")
+        assert os.path.isfile(hook_cmd)
 
     def test_adversarial_settings_has_correct_hook_path(self):
-        from thresher.agents.adversarial import _resolve_hooks_settings
-        path = _resolve_hooks_settings()
-        try:
-            settings = json.loads(path.read_text())
-            hook_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
-            assert "adversarial" in hook_cmd
-            assert hook_cmd.endswith("validate_json_output.sh")
-            assert os.path.isfile(hook_cmd)
-        finally:
-            path.unlink(missing_ok=True)
+        from thresher.agents.adversarial import _build_hooks_settings_json
+        settings = json.loads(_build_hooks_settings_json())
+        hook_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert "adversarial" in hook_cmd
+        assert hook_cmd.endswith("validate_json_output.sh")
+        assert os.path.isfile(hook_cmd)
 
     def test_report_settings_has_correct_hook_path(self):
-        from thresher.agents.report_maker import _resolve_hooks_settings
-        path = _resolve_hooks_settings()
-        try:
-            settings = json.loads(path.read_text())
-            hook_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
-            assert "report" in hook_cmd
-            assert hook_cmd.endswith("validate_json_output.sh")
-            assert os.path.isfile(hook_cmd)
-        finally:
-            path.unlink(missing_ok=True)
+        from thresher.agents.report_maker import _build_hooks_settings_json
+        settings = json.loads(_build_hooks_settings_json())
+        hook_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert "report" in hook_cmd
+        assert hook_cmd.endswith("validate_json_output.sh")
+        assert os.path.isfile(hook_cmd)
 
 
 class TestSettingsPassedToCommand:

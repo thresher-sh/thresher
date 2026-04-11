@@ -14,9 +14,9 @@ import logging
 import os
 import re
 import statistics
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack
 from pathlib import Path
 
 from thresher.run import run as run_cmd
@@ -25,6 +25,7 @@ from typing import Any
 import yaml
 
 from thresher.config import ScanConfig
+from thresher.fs import tempfile_with
 
 logger = logging.getLogger(__name__)
 
@@ -406,8 +407,8 @@ def _format_analyst_markdown(findings: dict[str, Any], analyst_def: dict[str, An
 # Stop hook settings
 # ---------------------------------------------------------------------------
 
-def _resolve_hooks_settings() -> Path:
-    """Write a temporary settings.json with absolute path to the hook script.
+def _build_hooks_settings_json() -> str:
+    """Return the settings.json content for the analyst stop hook.
 
     Resolves the hook script path to an absolute path so the hook works
     regardless of cwd (important inside Docker).
@@ -431,9 +432,7 @@ def _resolve_hooks_settings() -> Path:
             ]
         }
     }
-    settings_path = Path(tempfile.mktemp(suffix="_analyst_hooks_settings.json"))
-    settings_path.write_text(json.dumps(settings))
-    return settings_path
+    return json.dumps(settings)
 
 
 # ---------------------------------------------------------------------------
@@ -462,60 +461,50 @@ def _run_single_analyst(
 
     prompt = _build_analyst_prompt(analyst_def)
 
-    prompt_path = Path(tempfile.mktemp(suffix=f"_analyst_{number}_prompt.txt"))
-    settings_path = None
     try:
-        prompt_path.write_text(prompt)
-    except Exception:
-        logger.warning("Failed to write prompt for %s", label, exc_info=True)
-        return None
-
-    try:
-        settings_path = _resolve_hooks_settings()
+        hooks_json: str | None = _build_hooks_settings_json()
     except Exception:
         logger.warning("Failed to resolve analyst hook settings for %s", label, exc_info=True)
+        hooks_json = None
 
     model = config.model
-    cmd = [
-        "claude",
-        "-p", str(prompt_path),
-        "--model", model,
-        "--allowedTools", "Read,Glob,Grep,Bash",
-        "--output-format", "stream-json",
-        "--verbose",
-        "--max-turns", str(max_turns),
-    ]
-    if settings_path is not None:
-        cmd.extend(["--settings", str(settings_path)])
-
     env = os.environ.copy()
     ai_env = config.ai_env()
     env.update(ai_env)
 
     logger.info("Invoking %s", label)
     start_time = time.monotonic()
-    try:
-        proc = run_cmd(
-            cmd,
-            label=f"analyst-{name}",
-            env=env,
-            timeout=3600,
-            cwd=target_dir,
+    with ExitStack() as stack:
+        prompt_path = stack.enter_context(
+            tempfile_with(prompt, suffix=f"_analyst_{number}_prompt.txt")
         )
-        raw_output = proc.stdout.decode(errors="replace")
-    except Exception as exc:
-        logger.error("%s invocation failed: %s", label, exc)
-        return None
-    finally:
+        cmd = [
+            "claude",
+            "-p", str(prompt_path),
+            "--model", model,
+            "--allowedTools", "Read,Glob,Grep,Bash",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--max-turns", str(max_turns),
+        ]
+        if hooks_json is not None:
+            settings_path = stack.enter_context(
+                tempfile_with(hooks_json, suffix="_analyst_hooks_settings.json")
+            )
+            cmd.extend(["--settings", str(settings_path)])
+
         try:
-            prompt_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-        if settings_path is not None:
-            try:
-                settings_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            proc = run_cmd(
+                cmd,
+                label=f"analyst-{name}",
+                env=env,
+                timeout=3600,
+                cwd=target_dir,
+            )
+            raw_output = proc.stdout.decode(errors="replace")
+        except Exception as exc:
+            logger.error("%s invocation failed: %s", label, exc)
+            return None
     end_time = time.monotonic()
     duration = end_time - start_time
 
