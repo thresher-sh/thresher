@@ -71,33 +71,28 @@ class TestGenerateReport:
     @patch("thresher.report.synthesize._generate_html_report")
     @patch("thresher.report.synthesize._generate_template_report")
     @patch("thresher.report.synthesize.shutil.copytree")
-    @patch("thresher.report.synthesize.os.path.isfile", return_value=False)
     @patch("thresher.report.synthesize.os.path.isdir", return_value=False)
     @patch("thresher.report.synthesize.os.path.exists", return_value=False)
     @patch("thresher.report.synthesize.os.makedirs")
     @patch("thresher.report.synthesize._read_file", return_value=None)
     @patch("thresher.report.synthesize._write_file")
-    @patch("thresher.run._popen")
+    @patch("thresher.agents.synthesize.run_synthesize_agent", return_value=False)
     @patch("thresher.report.scoring.load_kev_catalog")
     @patch("thresher.report.scoring.fetch_epss_scores")
     def test_agent_fallback_on_failure(
-        self, mock_epss, mock_kev, mock_popen, mock_write, mock_read,
-        mock_makedirs, mock_exists, mock_isdir, mock_isfile, mock_copytree,
+        self, mock_epss, mock_kev, mock_agent, mock_write, mock_read,
+        mock_makedirs, mock_exists, mock_isdir, mock_copytree,
         mock_template_report, mock_html_report
     ):
         mock_epss.return_value = {}
         mock_kev.return_value = set()
-        # Claude fails — agent files won't exist so fallback to templates
-        mock_proc = MagicMock()
-        mock_proc.stdout = iter([])
-        mock_proc.returncode = 1
-        mock_proc.wait.return_value = 1
-        mock_popen.return_value = mock_proc
 
         config = _make_config(skip_ai=False)
         report_path = generate_report("", config)
 
-        # Template fallback should have been called (agent failed)
+        # Synthesis agent was called
+        assert mock_agent.called
+        # Template fallback should have been called (agent returned False)
         assert mock_template_report.called
 
     @patch("thresher.report.synthesize._generate_html_report")

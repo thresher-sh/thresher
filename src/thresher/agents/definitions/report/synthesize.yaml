@@ -1,0 +1,10 @@
+name: synthesize
+title: Report Synthesis Agent
+core_question: Can you merge all findings into a coherent, actionable security report?
+tools:
+- Read
+- Write
+- Glob
+- Grep
+- Bash
+max_turns: 75
