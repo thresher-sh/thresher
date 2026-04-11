@@ -14,15 +14,27 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from thresher.agents._json import extract_json_object
 from thresher.agents._runner import AgentSpec, build_stop_hook_settings, run_agent
-from thresher.agents.prompts import ADVERSARIAL_SYSTEM_PROMPT
 from thresher.config import ScanConfig
 
 logger = logging.getLogger(__name__)
 
 
 TARGET_DIR = "/opt/target"
+
+_DEFINITION_PATH = Path(__file__).parent / "definitions" / "adversarial.yaml"
+
+
+def _load_definition() -> dict[str, Any]:
+    with open(_DEFINITION_PATH) as f:
+        return yaml.safe_load(f)
+
+
+_DEFINITION = _load_definition()
+ADVERSARIAL_SYSTEM_PROMPT: str = _DEFINITION["prompt"]
 
 # Risk threshold: findings at or above this score go through adversarial review
 RISK_THRESHOLD = 4
@@ -462,8 +474,8 @@ def run_adversarial_verification(
     spec = AgentSpec(
         label="adversarial",
         prompt=_build_adversarial_prompt(high_risk),
-        allowed_tools=["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
-        max_turns=config.adversarial_max_turns or 20,
+        allowed_tools=list(_DEFINITION["tools"]),
+        max_turns=config.adversarial_max_turns or _DEFINITION["max_turns"],
         timeout=2400,
         cwd=target_dir,
         hooks_settings_json=hooks_json,

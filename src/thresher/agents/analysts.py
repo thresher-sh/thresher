@@ -36,13 +36,15 @@ _DEFINITIONS_DIR = Path(__file__).parent / "definitions"
 # ---------------------------------------------------------------------------
 
 def _load_definitions() -> list[dict[str, Any]]:
-    """Load analyst definitions from agents/definitions/*.yaml.
+    """Load analyst definitions from agents/definitions/NN-*.yaml.
 
-    Files are sorted by name (01-paranoid.yaml, 02-behaviorist.yaml, etc.)
-    so the numbering prefix controls execution order.
+    The numbered prefix (01-paranoid.yaml, 02-behaviorist.yaml, ...)
+    sorts execution order. Non-numbered files in the same directory
+    (predep, adversarial) are agent definitions for other stages and
+    are skipped here.
     """
     definitions = []
-    for yaml_file in sorted(_DEFINITIONS_DIR.glob("*.yaml")):
+    for yaml_file in sorted(_DEFINITIONS_DIR.glob("[0-9][0-9]-*.yaml")):
         with open(yaml_file) as f:
             definition = yaml.safe_load(f)
         if isinstance(definition, dict) and "number" in definition:

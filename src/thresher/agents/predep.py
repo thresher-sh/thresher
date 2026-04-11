@@ -17,7 +17,10 @@ Outputs a structured dict with discovered hidden dependencies.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from thresher.agents._json import extract_json_object
 from thresher.agents._runner import AgentSpec, build_stop_hook_settings, run_agent
@@ -28,77 +31,16 @@ logger = logging.getLogger(__name__)
 TARGET_DIR = "/opt/target"
 OUTPUT_PATH = "/opt/thresher/work/deps/hidden_deps.json"
 
-PREDEP_PROMPT = """\
-You are a dependency discovery agent. Your job is to scan a source code \
-repository and find ALL dependency sources that would NOT be detected by \
-standard package manager indicator files (package.json, requirements.txt, \
-Cargo.toml, go.mod, pyproject.toml, setup.py, Pipfile).
+_DEFINITION_PATH = Path(__file__).parent / "definitions" / "predep.yaml"
 
-Scan the repository thoroughly. Look at:
-- Makefiles, Rakefiles, Justfiles, Taskfiles
-- Shell scripts (.sh, .bash)
-- Dockerfiles and docker-compose files
-- CI/CD configs (.github/workflows/, .gitlab-ci.yml, Jenkinsfile, .circleci/)
-- .gitmodules (git submodule references)
-- Build scripts (build.sh, build.py, build.rs beyond normal cargo)
-- Install scripts
-- Any file that references external code sources
 
-For each hidden dependency you find, classify it:
+def _load_definition() -> dict[str, Any]:
+    with open(_DEFINITION_PATH) as f:
+        return yaml.safe_load(f)
 
-Types:
-- "git" — a git clone/checkout of an external repository
-- "npm" — an npm install/add of a package not in package.json
-- "pypi" — a pip install of a package not in requirements/pyproject
-- "cargo" — a cargo install not in Cargo.toml
-- "go" — a go install/get not in go.mod
-- "url" — a curl/wget/fetch of a tarball, binary, or script
-- "docker" — a Docker base image that may contain relevant dependencies
-- "submodule" — a git submodule reference
 
-Your output MUST be a single JSON object with this exact structure:
-```json
-{
-  "hidden_dependencies": [
-    {
-      "type": "git",
-      "source": "https://github.com/example/repo.git",
-      "found_in": "Makefile:42",
-      "context": "Cloned during build step to vendor a parser library",
-      "confidence": "high",
-      "risk": "low"
-    },
-    {
-      "type": "url",
-      "source": "https://example.com/tool-v1.2.tar.gz",
-      "found_in": "scripts/setup.sh:17",
-      "context": "Downloads and extracts a precompiled binary",
-      "confidence": "medium",
-      "risk": "high"
-    }
-  ],
-  "files_scanned": 42,
-  "summary": "Brief description of what you found"
-}
-```
-
-Rules:
-- confidence is "high", "medium", or "low" (how sure you are this is a real dependency)
-- risk is "high", "medium", or "low" — classify based on download risk:
-  - "high": precompiled binaries, tarballs from non-package-registry URLs, \
-executable downloads, curl-piped-to-bash patterns, unknown/suspicious domains
-  - "medium": git clones from non-major-hosting platforms, Docker images from \
-third-party registries
-  - "low": git clones from GitHub/GitLab/Bitbucket, standard package manager \
-installs, well-known CDN URLs
-- If you find NO hidden dependencies, return an empty list: "hidden_dependencies": []
-- Do NOT include dependencies that ARE in standard package files (package.json, requirements.txt, etc.)
-- DO include git submodules (.gitmodules entries)
-- DO include Docker FROM images if they reference non-standard base images
-- DO include any URL that downloads code, libraries, or tools
-- Be thorough — check EVERY file type listed above
-- Output ONLY the JSON object, nothing else
-"""
+_DEFINITION = _load_definition()
+PREDEP_PROMPT: str = _DEFINITION["prompt"]
 
 
 def run_predep_discovery(
@@ -122,9 +64,9 @@ def run_predep_discovery(
     logger.info("Running pre-dependency discovery agent")
     spec = AgentSpec(
         label="predep",
-        prompt=PREDEP_PROMPT,
-        allowed_tools=["Read", "Glob", "Grep"],
-        max_turns=config.predep_max_turns or 15,
+        prompt=_DEFINITION["prompt"],
+        allowed_tools=list(_DEFINITION["tools"]),
+        max_turns=config.predep_max_turns or _DEFINITION["max_turns"],
         timeout=600,
         cwd=target_dir,
         hooks_settings_json=hooks_json,
