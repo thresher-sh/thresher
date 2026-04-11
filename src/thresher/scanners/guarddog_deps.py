@@ -99,8 +99,87 @@ def run_guarddog_deps(output_dir: str) -> ScanResults:
         )
 
 
+# Top-level keys that GuardDog adds to its per-scan summary dict.
+# These are not package names, so the package-keyed scan must skip them.
+_GUARDDOG_META_KEYS = frozenset({"issues", "errors", "results"})
+
+
+def _is_explicit_finding_dict(item: dict[str, Any]) -> bool:
+    """True when a dict already looks like a single, formed finding entry
+    (the older list-of-findings format)."""
+    return "rule" in item or ("package" in item and "message" in item)
+
+
+def _parse_explicit_finding(item: dict[str, Any], idx: int) -> Finding:
+    rule_name = item.get("rule", item.get("name", f"unknown-{idx}"))
+    pkg_name = item.get("package", "unknown")
+    description = item.get("message", item.get("description", rule_name))
+    file_path = item.get("location", item.get("file"))
+    return Finding(
+        id=f"guarddog-deps-{pkg_name}-{rule_name}",
+        source_tool="guarddog-deps",
+        category="behavioral",
+        severity="high",
+        cvss_score=None,
+        cve_id=None,
+        title=f"Suspicious dep behavior: {rule_name} in {pkg_name}",
+        description=str(description),
+        file_path=str(file_path) if file_path else None,
+        line_number=None,
+        package_name=pkg_name,
+        package_version=None,
+        fix_version=None,
+        raw_output=item,
+    )
+
+
+def _parse_package_keyed_dict(raw: dict[str, Any]) -> list[Finding]:
+    """Walk a per-scan dict where top-level keys are package names mapping
+    to ``{"results": {rule: matches, ...}}`` entries.
+
+    Skips GuardDog's own meta keys (``issues``, ``errors``, ``results``)
+    so empty/clean scans yield zero findings instead of phantom entries.
+    """
+    findings: list[Finding] = []
+    for pkg_name, pkg_data in raw.items():
+        if pkg_name in _GUARDDOG_META_KEYS:
+            continue
+        if not isinstance(pkg_data, dict):
+            continue
+        results = pkg_data.get("results", {})
+        if not isinstance(results, dict):
+            continue
+        for rule_name, rule_matches in results.items():
+            if not rule_matches:
+                continue
+            findings.append(
+                Finding(
+                    id=f"guarddog-deps-{pkg_name}-{rule_name}",
+                    source_tool="guarddog-deps",
+                    category="behavioral",
+                    severity="high",
+                    cvss_score=None,
+                    cve_id=None,
+                    title=f"Suspicious dep behavior: {rule_name} in {pkg_name}",
+                    description=rule_name,
+                    file_path=None,
+                    line_number=None,
+                    package_name=pkg_name,
+                    package_version=None,
+                    fix_version=None,
+                    raw_output={"package": pkg_name, "rule": rule_name},
+                )
+            )
+    return findings
+
+
 def parse_guarddog_deps_output(raw: dict[str, Any] | list) -> list[Finding]:
     """Parse GuardDog deps JSON output into normalized Finding objects.
+
+    The harness combines per-subdir scan results into a list of dicts.
+    Each dict can be either:
+      1. an explicit finding entry (older list-of-findings format), or
+      2. a per-scan summary with package-keyed nested results.
 
     Args:
         raw: Parsed JSON from GuardDog output.
@@ -114,57 +193,13 @@ def parse_guarddog_deps_output(raw: dict[str, Any] | list) -> list[Finding]:
         for idx, item in enumerate(raw):
             if not isinstance(item, dict):
                 continue
-            rule_name = item.get("rule", item.get("name", f"unknown-{idx}"))
-            pkg_name = item.get("package", "unknown")
-            description = item.get("message", item.get("description", rule_name))
-            file_path = item.get("location", item.get("file"))
-
-            findings.append(
-                Finding(
-                    id=f"guarddog-deps-{pkg_name}-{rule_name}",
-                    source_tool="guarddog-deps",
-                    category="behavioral",
-                    severity="high",
-                    cvss_score=None,
-                    cve_id=None,
-                    title=f"Suspicious dep behavior: {rule_name} in {pkg_name}",
-                    description=str(description),
-                    file_path=str(file_path) if file_path else None,
-                    line_number=None,
-                    package_name=pkg_name,
-                    package_version=None,
-                    fix_version=None,
-                    raw_output=item,
-                )
-            )
+            if _is_explicit_finding_dict(item):
+                findings.append(_parse_explicit_finding(item, idx))
+            else:
+                findings.extend(_parse_package_keyed_dict(item))
         return findings
 
     if isinstance(raw, dict):
-        for pkg_name, pkg_data in raw.items():
-            if not isinstance(pkg_data, dict):
-                continue
-            results = pkg_data.get("results", {})
-            if isinstance(results, dict):
-                for rule_name, rule_matches in results.items():
-                    if not rule_matches:
-                        continue
-                    findings.append(
-                        Finding(
-                            id=f"guarddog-deps-{pkg_name}-{rule_name}",
-                            source_tool="guarddog-deps",
-                            category="behavioral",
-                            severity="high",
-                            cvss_score=None,
-                            cve_id=None,
-                            title=f"Suspicious dep behavior: {rule_name} in {pkg_name}",
-                            description=rule_name,
-                            file_path=None,
-                            line_number=None,
-                            package_name=pkg_name,
-                            package_version=None,
-                            fix_version=None,
-                            raw_output={"package": pkg_name, "rule": rule_name},
-                        )
-                    )
+        return _parse_package_keyed_dict(raw)
 
     return findings
