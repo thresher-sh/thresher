@@ -22,10 +22,39 @@ msg = event.get('last_assistant_message', '')
 if not msg:
     sys.exit(0)
 
-schema_path = os.environ.get('REPORT_SCHEMA_PATH', 'templates/report/report_schema.json')
+# Resolve schema path. REPORT_SCHEMA_PATH should be set to an absolute
+# path by the agent runner. If unset, try standard fallback locations
+# rather than a relative path that breaks when cwd changes.
+schema_path = os.environ.get('REPORT_SCHEMA_PATH')
+if not schema_path:
+    candidates = [
+        '/opt/templates/report/report_schema.json',
+        os.path.expanduser('~/github/thresher/templates/report/report_schema.json'),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            schema_path = c
+            break
 
-if not os.path.isfile(schema_path):
-    print('Schema file not found at ' + schema_path + '. Cannot validate output.', file=sys.stderr)
+if not schema_path or not os.path.isfile(schema_path):
+    print(
+        'REPORT_SCHEMA_PATH is unset or points at a missing file '
+        '(%r). The report-maker stop hook cannot validate output without '
+        'a schema. Set REPORT_SCHEMA_PATH to an absolute path.' % schema_path,
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+# jsonschema is REQUIRED — silently passing would let invalid output reach
+# the HTML template (the original bug). Fail loud if it's not importable.
+try:
+    import jsonschema
+except ImportError as exc:
+    print(
+        'jsonschema is required for report-maker output validation but '
+        'is not installed (%s). Install with: pip install jsonschema' % exc,
+        file=sys.stderr,
+    )
     sys.exit(2)
 
 # Try direct JSON parse
@@ -47,7 +76,6 @@ if data is None:
 
 # Validate against schema
 try:
-    import jsonschema
     schema = json.loads(open(schema_path).read())
     jsonschema.validate(instance=data, schema=schema)
     sys.exit(0)
@@ -55,6 +83,4 @@ except jsonschema.ValidationError as e:
     path = ' -> '.join(str(p) for p in e.absolute_path) if e.absolute_path else '(root)'
     print(f'Schema validation failed at {path}: {e.message}', file=sys.stderr)
     sys.exit(2)
-except ImportError:
-    sys.exit(0)
 "

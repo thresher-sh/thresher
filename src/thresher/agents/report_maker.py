@@ -25,6 +25,23 @@ _DEFINITION_PATH = Path(__file__).parent / "definitions" / "report" / "report_ma
 _HOOKS_DIR = Path(__file__).parent / "hooks" / "report"
 
 
+def _resolve_schema_path() -> str:
+    """Find the report_schema.json file across known locations.
+
+    The hook script reads ``REPORT_SCHEMA_PATH`` from its environment;
+    we resolve to the first existing file so the hook never has to guess.
+    """
+    candidates = [
+        Path("/opt/templates/report/report_schema.json"),
+        Path(__file__).parent.parent.parent.parent / "templates" / "report" / "report_schema.json",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return str(c.resolve())
+    # Fall back to the project-root path; the hook will surface the error.
+    return str(candidates[-1])
+
+
 def _load_definition() -> dict[str, Any]:
     """Load the report_maker YAML definition."""
     with open(_DEFINITION_PATH) as f:
@@ -227,6 +244,9 @@ def run_report_maker(
         env = os.environ.copy()
         ai_env = config.ai_env()
         env.update(ai_env)
+        # Pin the absolute schema path so the validate hook never has to
+        # guess (the relative default broke when cwd != project root).
+        env["REPORT_SCHEMA_PATH"] = _resolve_schema_path()
 
         logger.info("Invoking report maker agent (max_turns=%d)", max_turns)
         proc = run_cmd(
