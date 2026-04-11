@@ -87,18 +87,32 @@ class TestBuildDockerCmd:
         assert any("/opt/deps:" in t for t in tmpfs_targets)
 
     def test_home_tmpfs_has_sufficient_size(self):
-        """home tmpfs must be >= 2GB for vulnerability DB downloads."""
+        """home tmpfs must be >= 512MB for Claude Code config and misc files.
+
+        Vuln DBs are now baked into the image at /opt/vuln-db/ so the home
+        tmpfs no longer needs to hold multi-GB database downloads.
+        """
         config = _make_config()
         cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)
         tmpfs_indices = [i for i, v in enumerate(cmd) if v == "--tmpfs"]
         tmpfs_targets = [cmd[i + 1] for i in tmpfs_indices]
         home_mount = [t for t in tmpfs_targets if "/home/thresher:" in t][0]
-        # Extract size value from mount options
         for part in home_mount.split(","):
             if part.startswith("size="):
                 size = int(part.split("=")[1])
-                assert size >= 2 * 1024 * 1024 * 1024, f"home tmpfs too small: {size}"
+                assert size >= 512 * 1024 * 1024, f"home tmpfs too small: {size}"
                 break
+
+    def test_vuln_db_env_vars_set(self):
+        """Grype and Trivy must point at pre-populated DBs and skip updates."""
+        config = _make_config()
+        cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)
+        e_indices = [i for i, v in enumerate(cmd) if v == "-e"]
+        env_vars = [cmd[i + 1] for i in e_indices]
+        assert "GRYPE_DB_CACHE_DIR=/opt/vuln-db/grype" in env_vars
+        assert "GRYPE_DB_AUTO_UPDATE=false" in env_vars
+        assert "TRIVY_CACHE_DIR=/opt/vuln-db/trivy" in env_vars
+        assert "TRIVY_SKIP_DB_UPDATE=true" in env_vars
 
     def test_includes_output_volume(self):
         config = _make_config()

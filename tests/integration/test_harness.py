@@ -23,7 +23,7 @@ class TestHarnessPipeline:
 
         with patch("thresher.harness.pipeline._build_driver") as mock_build:
             mock_dr = MagicMock()
-            mock_dr.execute.return_value = {"report_path": expected_report}
+            mock_dr.execute.return_value = {"report_html": expected_report}
             mock_build.return_value = mock_dr
 
             result = run_pipeline(config)
@@ -34,7 +34,7 @@ class TestHarnessPipeline:
         # Verify the Hamilton execute was called with the correct final_vars
         call_kwargs = mock_dr.execute.call_args[1]
         assert "final_vars" in call_kwargs
-        assert "report_path" in call_kwargs["final_vars"]
+        assert "report_html" in call_kwargs["final_vars"]
 
     def test_full_pipeline_inputs_contain_config(self, tmp_path):
         """Pipeline passes correct inputs to Hamilton DAG including config dict."""
@@ -50,7 +50,7 @@ class TestHarnessPipeline:
 
         with patch("thresher.harness.pipeline._build_driver") as mock_build:
             mock_dr = MagicMock()
-            mock_dr.execute.return_value = {"report_path": str(tmp_path)}
+            mock_dr.execute.return_value = {"report_html": str(tmp_path)}
             mock_build.return_value = mock_dr
 
             run_pipeline(config)
@@ -77,7 +77,7 @@ class TestHarnessPipeline:
 
         with patch("thresher.harness.pipeline._build_driver") as mock_build:
             mock_dr = MagicMock()
-            mock_dr.execute.return_value = {"report_path": str(tmp_path)}
+            mock_dr.execute.return_value = {"report_html": str(tmp_path)}
             mock_build.return_value = mock_dr
 
             run_pipeline(config)
@@ -96,7 +96,7 @@ class TestHarnessPipeline:
 
         with patch("thresher.harness.pipeline._build_driver") as mock_build:
             mock_dr = MagicMock()
-            mock_dr.execute.return_value = {"report_path": sentinel}
+            mock_dr.execute.return_value = {"report_html": sentinel}
             mock_build.return_value = mock_dr
 
             result = run_pipeline(config)

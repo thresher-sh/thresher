@@ -36,7 +36,7 @@ def run_trivy(target_dir: str, output_dir: str) -> ScanResults:
     start = time.monotonic()
     try:
         result = run_cmd(
-            ["trivy", "fs", "--format", "json", target_dir],
+            ["trivy", "fs", "--format", "json", "--skip-db-update", target_dir],
             label="trivy",
             timeout=300,
             ok_codes=(0, 1),

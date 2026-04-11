@@ -64,9 +64,16 @@ def _build_docker_cmd(config: ScanConfig, config_path: str, output_dir: str) -> 
         "-v", f"{output_dir}:/output",
         "-v", f"{config_path}:/config/config.json:ro",
         *env_flags,
+        # Point vuln scanners at pre-populated DBs baked into the image
+        # and skip runtime DB updates (avoids tmpfs exhaustion from
+        # concurrent Grype+Trivy downloads competing for /home tmpfs).
+        "-e", "GRYPE_DB_CACHE_DIR=/opt/vuln-db/grype",
+        "-e", "GRYPE_DB_AUTO_UPDATE=false",
+        "-e", "TRIVY_CACHE_DIR=/opt/vuln-db/trivy",
+        "-e", "TRIVY_SKIP_DB_UPDATE=true",
         "--rm", "--read-only",
         "--tmpfs", "/tmp:rw,noexec,nosuid,size=1073741824,uid=1000,gid=1000",
-        "--tmpfs", "/home/thresher:rw,size=2147483648,uid=1000,gid=1000",
+        "--tmpfs", "/home/thresher:rw,size=536870912,uid=1000,gid=1000",
         "--tmpfs", "/opt/target:rw,size=2147483648,uid=1000,gid=1000",
         "--tmpfs", "/opt/scan-results:rw,size=1073741824,uid=1000,gid=1000",
         "--tmpfs", "/opt/deps:rw,size=2147483648,uid=1000,gid=1000",

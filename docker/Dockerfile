@@ -132,16 +132,22 @@ RUN case "${TARGETARCH}" in \
 # ── Claude Code ──────────────────────────────────────────────────────────────
 RUN npm install -g @anthropic-ai/claude-code
 
-# ── Pre-populate vulnerability databases ─────────────────────────────────────
-# These run at build time so the container starts with fresh DBs.
-# Failures are non-fatal (no network in some build environments).
-RUN grype db update || true
-RUN trivy image --download-db-only --no-progress debian:latest 2>/dev/null || true
-RUN freshclam 2>/dev/null || true
-
 # ── Non-root user ─────────────────────────────────────────────────────────────
 RUN userdel -r ubuntu 2>/dev/null || true \
     && useradd -m -s /bin/bash -u 1000 thresher
+
+# ── Pre-populate vulnerability databases ─────────────────────────────────────
+# Downloaded at build time into a shared read-only location so the container
+# doesn't need to re-download at runtime (which caused tmpfs exhaustion).
+# Grype DB: ~200-600MB expanded, Trivy DB: ~500-800MB.
+# Failures are non-fatal (no network in some build environments).
+RUN mkdir -p /opt/vuln-db/grype /opt/vuln-db/trivy
+ENV GRYPE_DB_CACHE_DIR=/opt/vuln-db/grype
+ENV TRIVY_CACHE_DIR=/opt/vuln-db/trivy
+RUN grype db update || true
+RUN trivy image --download-db-only --no-progress --cache-dir /opt/vuln-db/trivy debian:latest 2>/dev/null || true
+RUN freshclam 2>/dev/null || true
+RUN chown -R thresher:thresher /opt/vuln-db
 
 # ── Directory structure ───────────────────────────────────────────────────────
 RUN mkdir -p \

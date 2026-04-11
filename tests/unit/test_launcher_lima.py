@@ -171,6 +171,17 @@ class TestBuildLimaDockerCmd:
         assert "--config" in cmd
         assert "--output" in cmd
 
+    def test_vuln_db_env_vars_set(self):
+        """Grype and Trivy must point at pre-populated DBs and skip updates."""
+        config = _make_config()
+        cmd = _build_lima_docker_cmd(config)
+        e_indices = [i for i, v in enumerate(cmd) if v == "-e"]
+        env_vars = [cmd[i + 1] for i in e_indices]
+        assert "GRYPE_DB_CACHE_DIR=/opt/vuln-db/grype" in env_vars
+        assert "GRYPE_DB_AUTO_UPDATE=false" in env_vars
+        assert "TRIVY_CACHE_DIR=/opt/vuln-db/trivy" in env_vars
+        assert "TRIVY_SKIP_DB_UPDATE=true" in env_vars
+
 
 class TestCopyReportToHost:
     def test_calls_limactl_copy(self, tmp_path):
