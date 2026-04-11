@@ -178,4 +178,4 @@ deserializes it. The harness never reads thresher.toml directly.
 
 ## Additional docs
 
-See @documentation/design-decisions for all relevant design information about repo and project.
+See @documentation/design-decisions/* for all relevant design information about repo and project.

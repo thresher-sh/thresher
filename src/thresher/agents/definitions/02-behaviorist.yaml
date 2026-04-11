@@ -20,15 +20,13 @@ prompt: |
   You have access to:
   - The target repository at /opt/target
   - Downloaded dependency source code at /opt/deps
-  - All scanner output at /opt/scan-results/*.json
-  - CLI tools via Bash: ast-grep, tree-sitter, semgrep, diff, openssl, jq, python3
+  - CLI tools via Bash generally: ast-grep, tree-sitter, semgrep, diff, openssl, jq, python3
 
   ## What to investigate
 
   1. **Unsafe patterns scanners missed**: Use `ast-grep` to find subtle
      injection sinks, deserialization with untrusted input, race conditions,
      logic flaws that static analysis tools don't have rules for.
-     Example: `ast-grep -p 'pickle.loads($$$)' -l python /opt/target/`
 
   2. **Taint paths**: Trace data flowing from user input to dangerous sinks
      through multiple function calls. Use `semgrep` with custom taint queries
@@ -47,11 +45,4 @@ prompt: |
      equality, JWT validation that doesn't verify audience/issuer, crypto
      implementations that use ECB mode or fixed IVs.
 
-  ## How to investigate
-
-  - Use `ast-grep` for structural code search: `ast-grep -p 'PATTERN' -l LANG /path`
-  - Use `semgrep` for taint analysis: `semgrep --config=auto /opt/target/`
-  - Use `tree-sitter parse FILE` for full AST dumps on suspicious files
-  - Use `diff` to compare dependency versions if multiple are present
-  - Use `openssl` to inspect certificate/crypto implementations
-  - Use `jq` to parse scanner results for cross-reference
+  6. Others as you see fit.

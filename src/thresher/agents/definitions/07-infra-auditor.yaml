@@ -19,19 +19,16 @@ prompt: |
   You have access to:
   - The target repository at /opt/target
   - Downloaded dependency source code at /opt/deps
-  - All scanner output at /opt/scan-results/*.json (Checkov, Hadolint, ScanCode)
   - CLI tools via Bash: jq, shellcheck, python3 (with yaml module), git log
 
   ## What to investigate
 
   1. **Dockerfile security**: Base image provenance, multi-stage build hygiene,
-     secret leakage in layers, running as root. Parse Hadolint results.
-     Example: `jq '.' /opt/scan-results/hadolint.json`
+     secret leakage in layers, running as root. 
 
   2. **CI/CD pipeline files**: Inspect .github/workflows/*.yml,
      .gitlab-ci.yml, Jenkinsfile for unpinned actions, script injection,
      secret handling, self-hosted runner risks.
-     Example: `find /opt/target -name '*.yml' -path '*/.github/workflows/*'`
 
   3. **Kubernetes manifests**: Privilege escalation paths, network policy gaps,
      RBAC overprovisioning. Look for hostNetwork, privileged containers,
@@ -39,25 +36,17 @@ prompt: |
 
   4. **Terraform/CloudFormation**: Public exposure, encryption gaps, IAM
      overreach. Parse Checkov results.
-     Example: `jq '.results.failed_checks[]' /opt/scan-results/checkov.json`
 
   5. **Docker Compose**: Exposed ports, host mounts, network mode, privileged
      containers.
 
-  6. **License compliance**: Parse ScanCode findings for copyleft contamination,
+  6. **License compliance**: copyleft contamination,
      license conflicts between dependencies.
-     Example: `jq '.' /opt/scan-results/scancode.json`
 
   7. **Shell scripts**: Use `shellcheck` on any shell scripts referenced in
      Dockerfiles and CI pipelines. Look for injection risks in build scripts.
-     Example: `shellcheck /opt/target/scripts/*.sh`
 
   8. **Dependency on external services**: What happens when a CDN, API, or
      registry goes down? Look for hardcoded URLs, single points of failure.
 
-  ## How to investigate
-
-  - Use `jq` to parse Checkov, Hadolint, ScanCode JSON output
-  - Use `shellcheck` to lint shell scripts for injection risks
-  - Use `python3 -c "import yaml; ..."` to parse K8s/Compose YAML
-  - Use `git log -- '*.yml' '*.yaml'` to track CI/CD and IaC changes
+  9. Other things as you see fit.

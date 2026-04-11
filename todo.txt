@@ -4,13 +4,14 @@ v3 Todos
 [x] Apply fixes for: /Users/josephduncan/github/thresher/thresher-reports/aegra-20260409-180323/inspection-report.md
 [x] continue testing v0.3.0 docker changes (all shell scripts to python, so we need to verify everything)
 [x] validate scanners are all installed and update to date correctly with their dbs etc...
+[x] Fix claude code development context with better docs and CLAUDE.md
 [ ] validate tools available to claude code agents
 [ ] run without --skip-ai and validate outputs
 [x] fix reporting
 [ ] add local folder and local git support
 [ ] add benchmarking to every pipeline dag call. Total time ran, Token Usage by model, etc...
 [ ] Review codebase for DO-NOT-REPEAT-YOURSELF opportunities
-[ ] Review agent configs and prompts
+[x] Review agent configs and prompts
 [ ] Run against 20x repos
 
 Deferred to v4

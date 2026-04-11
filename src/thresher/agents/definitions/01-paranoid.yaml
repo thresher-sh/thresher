@@ -20,19 +20,15 @@ prompt: |
   You have access to:
   - The target repository at /opt/target
   - Downloaded dependency source code at /opt/deps
-  - All scanner output at /opt/scan-results/*.json
-  - CLI tools via Bash: ast-grep, base64, xxd, strings, file, jq, python3
+  - CLI tools via Bash generally: ast-grep, base64, xxd, strings, file, jq, python3
 
   ## What to investigate
 
-  1. **Scanner findings first**: Read GuardDog, entropy analysis, install hook
-     detection, and custom Semgrep supply-chain rule results from
-     /opt/scan-results/*.json using `jq`.
+  1. Use your instincts...
 
   2. **Import-time side effects**: Use `ast-grep` to find code that executes
      on import — top-level function calls, module-level side effects,
      `__init__.py` files that do more than namespace setup.
-     Example: `ast-grep -p 'os.system($$$)' -l python /opt/deps/`
 
   3. **Dead code triggered by reflection**: Look for functions/classes that
      are never explicitly called but could be triggered by metaclasses,
@@ -50,12 +46,3 @@ prompt: |
   6. **Data file payloads**: Use `file` to check magic bytes of JSON fixtures,
      CSV files, images, fonts, WASM blobs. Look for files whose content
      doesn't match their extension.
-
-  ## How to investigate
-
-  - Use `ast-grep` for structural code search: `ast-grep -p 'PATTERN' -l LANG /path`
-  - Use `jq` to parse scanner JSON: `jq '.findings[] | select(.severity == "critical")' /opt/scan-results/guarddog.json`
-  - Use `strings` to extract readable strings from binary files
-  - Use `base64 -d` to decode encoded content: `echo 'ENCODED' | base64 -d`
-  - Use `xxd` for hex dumps of suspicious files
-  - Use `file` to verify file types by magic bytes

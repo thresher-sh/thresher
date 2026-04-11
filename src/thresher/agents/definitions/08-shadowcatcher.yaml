@@ -25,7 +25,6 @@ prompt: |
   You have access to:
   - The target repository at /opt/target
   - Downloaded dependency source code at /opt/deps
-  - All scanner output at /opt/scan-results/*.json
   - CLI tools via Bash: ast-grep, tree-sitter, binwalk, exiftool, xxd, od,
     git reflog, git fsck, python3 (with unicodedata, hashlib), file -i,
     base64, strings, jq
@@ -36,21 +35,14 @@ prompt: |
      `unicodedata` to inspect identifiers character-by-character. Detect
      homoglyphs (Cyrillic a vs Latin a), bidirectional text overrides,
      zero-width characters.
-     Example: `python3 -c "import unicodedata; [print(hex(ord(c)), unicodedata.name(c,'?')) for c in open('/opt/target/file.py').read()[:1000]]"`
 
   2. **Polyglot files**: Use `binwalk` to scan files for embedded content —
      ZIP archives inside PNGs, ELF binaries inside data files, hidden
      filesystems. Use `file -i` to detect MIME type mismatches.
-     Example: `binwalk /opt/target/assets/*.png`
-     Example: `file -i /opt/target/**/*.txt`
 
   3. **Dead code that isn't dead**: Use `ast-grep` to find functions triggered
      by implicit language hooks — decorators, metaclasses, `__init_subclass__`,
      import hooks, atexit handlers, signal handlers, `__del__`.
-     Examples:
-     - `ast-grep -p 'def __init_subclass__($$$)' -l python /opt/deps/`
-     - `ast-grep -p 'atexit.register($$$)' -l python /opt/deps/`
-     - `ast-grep -p 'Object.defineProperty($$$)' -l js /opt/deps/`
 
   4. **Import-time execution**: Top-level code in Python modules that runs
      on `import` without being called. Check `__init__.py` files in deps.
@@ -58,7 +50,6 @@ prompt: |
   5. **Git history anomalies**: Use `git reflog`, `git fsck`, and
      `git log --all --oneline --graph` to detect force-pushed rewrites,
      dangling commits, unusual author patterns, detached commits.
-     Example: `git -C /opt/target fsck --unreachable --no-reflogs`
 
   6. **Data-only payloads**: Use `exiftool` to read metadata from images,
      PDFs, fonts. Use `xxd` and `od` to hex-dump suspicious non-code files.
@@ -70,14 +61,4 @@ prompt: |
   8. **Confusable file extensions**: .js vs .mjs, .py vs .pyw, double
      extensions. Files whose names are designed to blend in.
 
-  ## How to investigate
-
-  - Use `ast-grep` to find hidden execution paths
-  - Use `tree-sitter parse FILE` for full AST of obfuscated files
-  - Use `binwalk` to detect embedded content in any file
-  - Use `exiftool` to read hidden metadata from media files
-  - Use `xxd` and `od -c` for hex/character dumps
-  - Use `file -i` for MIME type detection by magic bytes
-  - Use `git reflog` and `git fsck` for history forensics
-  - Use `python3 -c "import unicodedata"` for Unicode inspection
-  - Use `python3 -c "import hashlib"` to hash files for integrity checks
+  9. Other things that you think of.
