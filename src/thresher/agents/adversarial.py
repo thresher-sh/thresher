@@ -532,6 +532,8 @@ def run_adversarial_verification(
     config: ScanConfig,
     analyst_findings: list[dict[str, Any]] | None = None,
     target_dir: str = TARGET_DIR,
+    *,
+    output_dir: str | None = None,
 ) -> dict[str, Any] | None:
     """Run the adversarial verification agent.
 
@@ -642,6 +644,23 @@ def run_adversarial_verification(
     )
 
     merged = _merge_adversarial_results(ai_findings, verification)
+
+    # Persist a human-readable adversarial-verification.md report next to
+    # the main report. Without this the verification work is only visible
+    # in scan logs.
+    if output_dir:
+        try:
+            md_path = Path(output_dir) / "adversarial-verification.md"
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(
+                _format_adversarial_markdown(verification, merged)
+            )
+            logger.info("Adversarial verification markdown written to %s", md_path)
+        except Exception:
+            logger.warning(
+                "Failed to write adversarial markdown report", exc_info=True,
+            )
+
     return merged
 
 

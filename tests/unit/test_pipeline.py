@@ -10,7 +10,8 @@ def test_pipeline_module_has_required_functions():
     required = [
         "cloned_path", "ecosystems", "hidden_deps", "deps_path",
         "sbom_path", "scan_results", "analyst_findings",
-        "verified_findings", "enriched_findings", "report_data", "report_html",
+        "verified_findings", "enriched_findings", "report_data",
+        "synthesized_reports", "report_html",
     ]
     for name in required:
         assert hasattr(pipeline, name), f"Missing DAG node: {name}"
@@ -88,3 +89,35 @@ def test_run_pipeline_calls_hamilton_execute(tmp_path):
         mock_build.return_value = mock_dr
         pipeline.run_pipeline(config)
         mock_dr.execute.assert_called_once()
+
+
+def test_synthesized_reports_skip_ai_returns_false():
+    """When skip_ai=True, synthesized_reports short-circuits."""
+    config = ScanConfig(skip_ai=True)
+    result = pipeline.synthesized_reports(
+        verified_findings=[],
+        enriched_findings={"findings": [], "scanner_results": {}},
+        scan_results=[],
+        config=config,
+    )
+    assert result is False
+
+
+def test_synthesized_reports_invokes_agent():
+    """When AI is enabled, synthesized_reports calls run_synthesize_agent."""
+    config = ScanConfig(
+        skip_ai=False,
+        anthropic_api_key="sk-ant-test",
+        output_dir="/tmp/test-output",
+    )
+    enriched = {"findings": [{"title": "x", "severity": "high"}], "scanner_results": {}}
+    with patch("thresher.agents.synthesize.run_synthesize_agent",
+               return_value=True) as mock_agent:
+        result = pipeline.synthesized_reports(
+            verified_findings=[],
+            enriched_findings=enriched,
+            scan_results=[],
+            config=config,
+        )
+    mock_agent.assert_called_once()
+    assert result is True

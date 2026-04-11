@@ -782,3 +782,33 @@ class TestRunAdversarialVerification:
             analyst_findings=self._analyst_findings_with_high_risk(),
         )
         assert result is None
+
+    @patch("thresher.run._popen")
+    def test_writes_markdown_when_output_dir_provided(self, mock_popen, tmp_path):
+        """When output_dir is provided, an adversarial-verification.md is
+        written next to the report so the verification work is visible."""
+        mock_popen.return_value = _mock_popen(
+            returncode=0, stdout=self._valid_adversarial_output(),
+        )
+        run_adversarial_verification(
+            _make_config(),
+            analyst_findings=self._analyst_findings_with_high_risk(),
+            output_dir=str(tmp_path),
+        )
+        md_path = tmp_path / "adversarial-verification.md"
+        assert md_path.exists(), "adversarial-verification.md not written"
+        body = md_path.read_text()
+        assert "Adversarial Verification" in body
+
+    @patch("thresher.run._popen")
+    def test_no_markdown_when_no_output_dir(self, mock_popen, tmp_path):
+        """Without output_dir, no markdown file should be written anywhere."""
+        mock_popen.return_value = _mock_popen(
+            returncode=0, stdout=self._valid_adversarial_output(),
+        )
+        run_adversarial_verification(
+            _make_config(),
+            analyst_findings=self._analyst_findings_with_high_risk(),
+        )
+        # Confirm no markdown got written into tmp_path
+        assert list(tmp_path.glob("*.md")) == []

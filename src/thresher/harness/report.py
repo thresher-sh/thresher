@@ -265,18 +265,38 @@ def finalize_output(
     findings_path = Path(output_dir) / "findings.json"
     findings_path.write_text(json.dumps(findings, indent=2, default=str))
 
-    # Save per-analyst findings as individual JSON files
+    # Save per-analyst findings as individual JSON + markdown overview files.
+    # The markdown overview makes findings reviewable without parsing JSON
+    # and matches what the apply-report skill expects.
     if analyst_findings:
+        from thresher.agents.analysts import (
+            ANALYST_DEFINITIONS,
+            _format_analyst_markdown,
+        )
+
+        analyst_def_by_name = {d["name"]: d for d in ANALYST_DEFINITIONS}
         scan_results_dir = Path(output_dir) / "scan-results"
         scan_results_dir.mkdir(exist_ok=True)
         for af in analyst_findings:
             number = af.get("analyst_number", 0)
             name = af.get("analyst", "unknown")
-            filename = f"analyst-{number:02d}-{name}.json"
-            (scan_results_dir / filename).write_text(
+            base = f"analyst-{number:02d}-{name}"
+
+            (scan_results_dir / f"{base}.json").write_text(
                 json.dumps(af, indent=2, default=str)
             )
-            logger.info("Saved per-analyst findings: %s", filename)
+
+            analyst_def = analyst_def_by_name.get(name)
+            if analyst_def is not None:
+                try:
+                    md_text = _format_analyst_markdown(af, analyst_def)
+                    (scan_results_dir / f"{base}.md").write_text(md_text)
+                except Exception:
+                    logger.warning(
+                        "Failed to format analyst markdown for %s",
+                        name, exc_info=True,
+                    )
+            logger.info("Saved per-analyst findings: %s.json/.md", base)
 
     # Copy raw scanner output files into scan-results/ subfolder
     scan_results_dir = Path(output_dir) / "scan-results"
@@ -291,6 +311,33 @@ def finalize_output(
     validate_report_output(output_dir)
 
 
+# Top-level keys the HTML template's renderHero/renderFindingsBar/etc.
+# expect on the report_data dict. Missing keys cause "undefined" cells in
+# the rendered page, so we treat their absence as a hard validation
+# failure and fall back to build_fallback_report_data().
+_REQUIRED_REPORT_DATA_KEYS = frozenset({
+    "meta",
+    "verdict",
+    "counts",
+    "executive_summary",
+    "scanner_findings",
+    "ai_findings",
+    "pipeline",
+})
+
+
+def validate_report_data(report_data: dict) -> set[str]:
+    """Return the set of required top-level keys missing from report_data.
+
+    An empty return set means the dict has every key the HTML template
+    needs. The pipeline's report_data() node uses this to decide whether
+    to fall back to ``build_fallback_report_data``.
+    """
+    if not isinstance(report_data, dict):
+        return set(_REQUIRED_REPORT_DATA_KEYS)
+    return {k for k in _REQUIRED_REPORT_DATA_KEYS if k not in report_data}
+
+
 def render_report(
     report_data: dict,
     output_dir: str,
@@ -298,6 +345,9 @@ def render_report(
     template_dir: str | None = None,
 ) -> str:
     """Render HTML report by injecting report_data JSON into the Jinja template.
+
+    Also persists ``report_data.json`` next to ``report.html`` so downstream
+    tools can consume the structured data without scraping the HTML.
 
     Returns the path to the generated report.html.
     """
@@ -325,11 +375,18 @@ def render_report(
     )
     template = env.get_template("template_report.html")
 
-    html = template.render(report_data=_json.dumps(report_data, indent=2))
+    serialized = _json.dumps(report_data, indent=2, default=str)
+    html = template.render(report_data=serialized)
 
-    out_path = Path(output_dir) / "report.html"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_dir_path = Path(output_dir)
+    out_dir_path.mkdir(parents=True, exist_ok=True)
+
+    out_path = out_dir_path / "report.html"
     out_path.write_text(html)
+
+    # Persist the raw report_data alongside the HTML so it's independently
+    # inspectable. Without this, the HTML is the only place the data lives.
+    (out_dir_path / "report_data.json").write_text(serialized)
 
     logger.info("Report written to %s", out_path)
     return str(out_path)

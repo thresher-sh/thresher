@@ -80,7 +80,12 @@ def verified_findings(analyst_findings: list[dict],
     if config.skip_ai or not analyst_findings:
         return analyst_findings
     from thresher.agents.adversarial import run_adversarial_verification
-    result = run_adversarial_verification(config, analyst_findings, cloned_path)
+    result = run_adversarial_verification(
+        config,
+        analyst_findings,
+        cloned_path,
+        output_dir=config.output_dir or "/opt/scan-results",
+    )
     if isinstance(result, dict):
         return result.get("findings", [])
     return result if result else []
@@ -100,26 +105,89 @@ def report_data(enriched_findings: dict, scan_results: list[ScanResults],
     Note: Uses config.output_dir rather than a Hamilton-wired output_dir input.
     This matches the pattern used by other agent-calling nodes in this pipeline.
     """
+    from thresher.harness.report import (
+        build_fallback_report_data,
+        validate_report_data,
+    )
+
     if config.skip_ai:
-        from thresher.harness.report import build_fallback_report_data
         findings = enriched_findings.get("findings", [])
         return build_fallback_report_data(config, findings)
 
     from thresher.agents.report_maker import run_report_maker
     result = run_report_maker(config, config.output_dir or "/opt/scan-results")
     if result is None:
-        from thresher.harness.report import build_fallback_report_data
+        findings = enriched_findings.get("findings", [])
+        logger.warning(
+            "report_maker returned no data; using fallback report_data"
+        )
+        return build_fallback_report_data(config, findings)
+
+    # Schema validation: if the agent's output is missing required keys
+    # (typically because it hit error_max_turns), fall back to the
+    # programmatic builder rather than feeding broken data to the HTML
+    # template.
+    missing = validate_report_data(result)
+    if missing:
+        logger.warning(
+            "report_maker output missing required schema keys (%s); "
+            "using fallback report_data",
+            ", ".join(sorted(missing)),
+        )
         findings = enriched_findings.get("findings", [])
         return build_fallback_report_data(config, findings)
+
     return result
+
+
+def synthesized_reports(verified_findings: list[dict],
+                        enriched_findings: dict,
+                        scan_results: list[ScanResults],
+                        config: ScanConfig) -> bool:
+    """Run the synthesis agent to write executive-summary / detailed-report
+    / synthesis-findings markdown files into the output directory.
+
+    Returns True when the agent produced the expected files. Skipped when
+    skip_ai is set or AI credentials are unavailable.
+    """
+    if config.skip_ai or not config.has_ai_credentials:
+        return False
+
+    from thresher.agents.synthesize import (
+        build_synthesis_input,
+        run_synthesize_agent,
+    )
+    import os as _os
+
+    output_dir = config.output_dir or "/opt/scan-results"
+    _os.makedirs(output_dir, exist_ok=True)
+
+    findings = enriched_findings.get("findings", [])
+    synthesis_input = build_synthesis_input(
+        scan_results,
+        {"findings": verified_findings},
+        findings,
+    )
+    try:
+        return run_synthesize_agent(config, output_dir, synthesis_input)
+    except Exception as exc:
+        logger.warning("synthesize agent invocation failed: %s", exc)
+        return False
 
 
 def report_html(report_data: dict, enriched_findings: dict,
                 scan_results: list[ScanResults], analyst_findings: list[dict],
-                config: ScanConfig) -> str:
-    """Render final HTML report and finalize output directory."""
+                synthesized_reports: bool, config: ScanConfig) -> str:
+    """Render final HTML report and finalize output directory.
+
+    Depends on ``synthesized_reports`` so the synthesis markdown files are
+    written before ``finalize_output`` runs ``validate_report_output`` over
+    the directory. The bool return value of synthesized_reports is unused
+    here — it exists to enforce DAG ordering.
+    """
     from thresher.harness.report import render_report, finalize_output
 
+    _ = synthesized_reports  # ordering only — value is recorded by the agent
     output_dir = config.output_dir or "/opt/scan-results"
     html_path = render_report(report_data, output_dir)
     finalize_output(enriched_findings, scan_results, config,
