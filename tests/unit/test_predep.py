@@ -78,6 +78,32 @@ class TestParsePredepOutput:
         result = _parse_predep_output(wrapped)
         assert len(result["hidden_dependencies"]) == 2
 
+    def test_stream_json_result_with_markdown_fences(self):
+        """Regression: Claude wraps result JSON in ```json fences. The parser
+        must strip them before parsing the inner string."""
+        import json
+        fenced_inner = "```json\n" + SAMPLE_OUTPUT + "\n```"
+        stream_line = json.dumps({
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "result": fenced_inner,
+        })
+        result = _parse_predep_output(stream_line)
+        assert len(result["hidden_dependencies"]) == 2
+        assert result["files_scanned"] == 15
+
+    def test_stream_json_result_with_bare_fences(self):
+        """Same regression but with bare ``` (no json language tag)."""
+        import json
+        fenced_inner = "```\n" + SAMPLE_OUTPUT + "\n```"
+        stream_line = json.dumps({
+            "type": "result",
+            "result": fenced_inner,
+        })
+        result = _parse_predep_output(stream_line)
+        assert len(result["hidden_dependencies"]) == 2
+
     def test_empty_deps(self):
         output = '{"hidden_dependencies": [], "files_scanned": 5, "summary": "None found"}'
         result = _parse_predep_output(output)

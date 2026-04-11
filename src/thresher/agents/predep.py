@@ -230,6 +230,27 @@ def run_predep_discovery(
     return result
 
 
+def _strip_markdown_fences(text: str) -> str:
+    """Strip ``` / ```json markdown fences from a string, if present.
+
+    Claude often wraps structured output in fenced code blocks even when
+    asked not to. This returns the inner content unchanged if no fences
+    are found.
+    """
+    import re
+    if not isinstance(text, str):
+        return text
+    stripped = text.strip()
+    fence_match = re.match(
+        r"^```(?:json)?\s*\n(.*?)\n```\s*$",
+        stripped,
+        re.DOTALL,
+    )
+    if fence_match:
+        return fence_match.group(1)
+    return text
+
+
 def _parse_predep_output(raw_output: str) -> dict[str, Any]:
     """Parse the agent's stream-json output to extract the JSON result.
 
@@ -248,8 +269,11 @@ def _parse_predep_output(raw_output: str) -> dict[str, Any]:
                 if obj.get("type") == "result" and "result" in obj:
                     inner = obj["result"]
                     if isinstance(inner, str):
+                        # Claude may wrap the JSON in ```json fences even
+                        # when asked not to — strip them first.
+                        inner_stripped = _strip_markdown_fences(inner)
                         try:
-                            parsed = json.loads(inner)
+                            parsed = json.loads(inner_stripped)
                             if isinstance(parsed, dict) and "hidden_dependencies" in parsed:
                                 return parsed
                         except (json.JSONDecodeError, TypeError):
