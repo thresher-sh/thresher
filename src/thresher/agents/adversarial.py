@@ -410,21 +410,41 @@ def _merge_adversarial_results(
             list(verification.keys()),
         )
 
+    # Build lookup by (file_path, normalized_title) for robust matching.
+    # The adversarial agent may paraphrase or truncate titles.
     results_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    results_by_file: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for result in results:
         if isinstance(result, dict):
             fp = result.get("file_path", "")
-            title = result.get("title", "")
+            title = _normalize_title(result.get("title", ""))
             if fp:
                 results_by_key[(fp, title)] = result
+                results_by_file[fp].append(result)
 
     findings_list = updated_findings.get("findings", [])
+
+    # Count findings per file_path for fallback matching
+    findings_by_file: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for finding in findings_list:
+        if isinstance(finding, dict):
+            findings_by_file[finding.get("file_path", "")].append(finding)
+
     for finding in findings_list:
         if not isinstance(finding, dict):
             continue
         fp = finding.get("file_path", "")
-        title = finding.get("title", "")
+        title = _normalize_title(finding.get("title", ""))
         verification_result = results_by_key.get((fp, title))
+
+        # Fallback: if there's exactly one finding and one result for this
+        # file_path, match them even if titles diverged
+        if not verification_result and fp:
+            file_results = results_by_file.get(fp, [])
+            file_findings = findings_by_file.get(fp, [])
+            if len(file_results) == 1 and len(file_findings) == 1:
+                verification_result = file_results[0]
+
         if verification_result:
             finding["adversarial_status"] = verification_result.get("verdict", "unknown")
             finding["adversarial_reasoning"] = verification_result.get("reasoning", "")
@@ -436,6 +456,12 @@ def _merge_adversarial_results(
             if revised is not None:
                 finding["original_risk_score"] = finding.get("risk_score", 0)
                 finding["risk_score"] = int(revised)
+
+    # Tag unreviewed findings so downstream code can distinguish "not reviewed"
+    # from "reviewed but unmatched"
+    for finding in findings_list:
+        if isinstance(finding, dict) and "adversarial_status" not in finding:
+            finding["adversarial_status"] = "not_reviewed"
 
     updated_findings["adversarial_verification"] = {
         "summary": verification.get("verification_summary", ""),

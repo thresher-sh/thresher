@@ -213,12 +213,12 @@ class TestMergeAdversarialResults:
         assert finding_a["original_risk_score"] == 7
         assert result["adversarial_verification"]["downgraded_count"] == 1
 
-    def test_unmatched_finding_unchanged(self):
+    def test_unmatched_finding_gets_not_reviewed(self):
         ai = {"findings": [{"file_path": "/x.py", "risk_score": 6}]}
         verification = {"results": [], "total_reviewed": 0, "confirmed_count": 0, "downgraded_count": 0}
         result = _merge_adversarial_results(ai, verification)
         assert result["findings"][0]["risk_score"] == 6
-        assert "adversarial_status" not in result["findings"][0]
+        assert result["findings"][0]["adversarial_status"] == "not_reviewed"
 
     def test_multiple_findings_same_path_get_correct_verdicts(self):
         """Two findings at the same file_path should each get their own verdict."""
@@ -505,6 +505,104 @@ class TestMergeAdversarialResultsBothSchemas:
         with caplog.at_level(logging.WARNING):
             _merge_adversarial_results(ai_findings, verification)
         assert "unexpected schema" in caplog.text.lower()
+
+
+class TestMergeNormalizedTitleMatching:
+    """Tests for robust title matching in _merge_adversarial_results."""
+
+    def test_matches_with_different_casing(self):
+        ai = {"findings": [
+            {"file_path": "/a.py", "title": "SQL Injection Risk", "risk_score": 7},
+        ]}
+        verification = {
+            "results": [{"file_path": "/a.py", "title": "sql injection risk",
+                         "verdict": "confirmed", "confidence": 90}],
+            "total_reviewed": 1, "confirmed_count": 1, "downgraded_count": 0,
+        }
+        result = _merge_adversarial_results(ai, verification)
+        assert result["findings"][0]["adversarial_status"] == "confirmed"
+
+    def test_matches_with_extra_whitespace(self):
+        ai = {"findings": [
+            {"file_path": "/a.py", "title": "Command  Injection", "risk_score": 8},
+        ]}
+        verification = {
+            "results": [{"file_path": "/a.py", "title": "Command Injection",
+                         "verdict": "downgraded", "revised_risk_score": 3, "confidence": 85}],
+            "total_reviewed": 1, "confirmed_count": 0, "downgraded_count": 1,
+        }
+        result = _merge_adversarial_results(ai, verification)
+        assert result["findings"][0]["adversarial_status"] == "downgraded"
+
+    def test_fallback_single_finding_per_file(self):
+        """When one finding and one result share a file_path but titles differ,
+        fall back to file_path-only matching."""
+        ai = {"findings": [
+            {"file_path": "/a.py", "title": "Hardcoded credentials detected", "risk_score": 7},
+        ]}
+        verification = {
+            "results": [{"file_path": "/a.py", "title": "Exposed API key in source",
+                         "verdict": "confirmed", "confidence": 92}],
+            "total_reviewed": 1, "confirmed_count": 1, "downgraded_count": 0,
+        }
+        result = _merge_adversarial_results(ai, verification)
+        assert result["findings"][0]["adversarial_status"] == "confirmed"
+
+    def test_no_fallback_when_multiple_findings_per_file(self):
+        """When multiple findings share a file_path, don't use file-only fallback."""
+        ai = {"findings": [
+            {"file_path": "/a.py", "title": "Issue A", "risk_score": 7},
+            {"file_path": "/a.py", "title": "Issue B", "risk_score": 6},
+        ]}
+        verification = {
+            "results": [{"file_path": "/a.py", "title": "Something else entirely",
+                         "verdict": "confirmed", "confidence": 80}],
+            "total_reviewed": 1, "confirmed_count": 1, "downgraded_count": 0,
+        }
+        result = _merge_adversarial_results(ai, verification)
+        # Neither should match — ambiguous which finding the result corresponds to
+        statuses = [f["adversarial_status"] for f in result["findings"]]
+        assert statuses == ["not_reviewed", "not_reviewed"]
+
+    def test_all_findings_get_adversarial_status(self):
+        """Every finding should have adversarial_status after merge."""
+        ai = {"findings": [
+            {"file_path": "/a.py", "title": "Critical bug", "risk_score": 9},
+            {"file_path": "/b.py", "title": "Minor issue", "risk_score": 2},
+        ]}
+        verification = {
+            "results": [{"file_path": "/a.py", "title": "Critical bug",
+                         "verdict": "confirmed", "confidence": 95}],
+            "total_reviewed": 1, "confirmed_count": 1, "downgraded_count": 0,
+        }
+        result = _merge_adversarial_results(ai, verification)
+        assert result["findings"][0]["adversarial_status"] == "confirmed"
+        assert result["findings"][1]["adversarial_status"] == "not_reviewed"
+
+    def test_adversarial_status_survives_enrichment(self):
+        """End-to-end: adversarial_status should survive through enrich_all_findings."""
+        from unittest.mock import patch
+        from thresher.harness.report import enrich_all_findings
+
+        ai = {"findings": [
+            {"file_path": "/a.py", "title": "RCE", "risk_score": 9},
+        ]}
+        verification = {
+            "results": [{"file_path": "/a.py", "title": "RCE",
+                         "verdict": "confirmed", "confidence": 95}],
+            "total_reviewed": 1, "confirmed_count": 1, "downgraded_count": 0,
+        }
+        merged = _merge_adversarial_results(ai, verification)
+        verified_list = merged["findings"]
+
+        with patch("thresher.report.scoring.fetch_epss_scores", return_value={}), \
+             patch("thresher.report.scoring.load_kev_catalog", return_value=set()):
+            result = enrich_all_findings([], verified_list)
+
+        enriched = result["findings"]
+        assert len(enriched) == 1
+        assert enriched[0]["adversarial_status"] == "confirmed"
+        assert enriched[0]["ai_risk_score"] == 9
 
 
 class TestMergeAnalystFindings:
