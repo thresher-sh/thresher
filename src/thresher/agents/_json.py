@@ -138,16 +138,16 @@ def extract_json_object(
         parsed = None
 
     if isinstance(parsed, dict):
-        # Try unwrapping {"result": "<json string>"} or {"result": {...}}
+        # Try unwrapping {"result": "<json string>"} or {"result": {...}}.
+        # The inner string may itself be fenced or have prose around it,
+        # so recurse through the same cascade rather than calling
+        # ``json.loads`` directly.
         if "result" in parsed:
             inner = parsed["result"]
             if isinstance(inner, str):
-                try:
-                    inner_parsed = json.loads(inner)
-                    if isinstance(inner_parsed, dict):
-                        candidates.append(inner_parsed)
-                except json.JSONDecodeError:
-                    pass
+                inner_obj = extract_json_object(inner)
+                if inner_obj is not None:
+                    candidates.append(inner_obj)
             elif isinstance(inner, dict):
                 candidates.append(inner)
         candidates.append(parsed)

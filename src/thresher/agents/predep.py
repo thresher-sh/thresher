@@ -18,16 +18,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
-from thresher.run import run as run_cmd
-
-from thresher.agents._json import extract_json_object, extract_stream_result
+from thresher.agents._json import extract_json_object
+from thresher.agents._runner import AgentSpec, run_agent
 from thresher.config import ScanConfig
-from thresher.fs import tempfile_with
 
 logger = logging.getLogger(__name__)
 
@@ -145,69 +141,35 @@ def run_predep_discovery(
     Scans the cloned source for hidden dependency sources and returns
     the results as a dict. A stop hook validates the output against the
     hidden_dependencies schema before accepting it.
-
-    Args:
-        config: Scan configuration.
-        target_dir: Directory to scan (passed as cwd to claude).
-
-    Returns:
-        Dict with discovered hidden dependencies.
     """
     try:
         hooks_json: str | None = _build_hooks_settings_json()
     except Exception:
         logger.warning("Failed to resolve predep hook settings", exc_info=True)
-        # Continue without the hook — output validation will still
-        # happen in _parse_predep_output, just without retry
+        # Continue without the hook — output validation still happens
+        # in _parse_predep_output, just without retry.
         hooks_json = None
 
-    model = config.model
-    max_turns = config.predep_max_turns or 15
-
-    env = os.environ.copy()
-    ai_env = config.ai_env()
-    env.update(ai_env)
-
     logger.info("Running pre-dependency discovery agent")
-    with ExitStack() as stack:
-        prompt_path = stack.enter_context(
-            tempfile_with(PREDEP_PROMPT, suffix="_predep_prompt.txt")
-        )
-        cmd = [
-            "claude",
-            "-p", str(prompt_path),
-            "--model", model,
-            "--allowedTools", "Read,Glob,Grep",
-            "--output-format", "stream-json",
-            "--verbose",
-            "--max-turns", str(max_turns),
-        ]
-        if hooks_json is not None:
-            settings_path = stack.enter_context(
-                tempfile_with(hooks_json, suffix="_predep_hooks_settings.json")
-            )
-            cmd.extend(["--settings", str(settings_path)])
+    spec = AgentSpec(
+        label="predep",
+        prompt=PREDEP_PROMPT,
+        allowed_tools=["Read", "Glob", "Grep"],
+        max_turns=config.predep_max_turns or 15,
+        timeout=600,
+        cwd=target_dir,
+        hooks_settings_json=hooks_json,
+    )
+    agent_result = run_agent(spec, config)
+    if agent_result.failed:
+        return _empty_result(f"Agent invocation failed: {agent_result.error}")
 
-        try:
-            proc = run_cmd(
-                cmd,
-                label="predep",
-                env=env,
-                timeout=600,
-                cwd=target_dir,
-            )
-            stdout = proc.stdout.decode(errors="replace")
-        except Exception as exc:
-            logger.error("Pre-dep discovery agent failed: %s", exc)
-            return _empty_result(f"Agent invocation failed: {exc}")
-
-    result = _parse_predep_output(stdout)
+    result = _parse_predep_output(agent_result.result_text)
 
     # Inject the high_risk_dep flag so downstream can know whether
-    # to download high-risk entries
+    # to download high-risk entries.
     result["high_risk_dep"] = config.high_risk_dep
 
-    # Log summary with risk breakdown
     deps = result.get("hidden_dependencies", [])
     high_risk = [d for d in deps if d.get("risk") == "high"]
     logger.info(
@@ -221,18 +183,17 @@ def run_predep_discovery(
     return result
 
 
-def _parse_predep_output(raw_output: str) -> dict[str, Any]:
-    """Parse the agent's stream-json output to extract the JSON result."""
-    text, _ = extract_stream_result(raw_output)
+def _parse_predep_output(text: str) -> dict[str, Any]:
+    """Extract the predep JSON object from the agent's result text."""
     parsed = extract_json_object(
         text, accept=lambda d: "hidden_dependencies" in d,
     )
     if parsed is not None:
         return parsed
 
-    preview = raw_output[:500] if raw_output else "(empty)"
+    preview = text[:500] if text else "(empty)"
     logger.warning(
-        "Could not parse predep agent output. Raw (first 500 chars): %s", preview,
+        "Could not parse predep agent output. Result (first 500 chars): %s", preview,
     )
     return _empty_result("Failed to parse agent output")
 

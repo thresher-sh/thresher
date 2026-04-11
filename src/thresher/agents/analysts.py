@@ -11,21 +11,17 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import ExitStack
 from pathlib import Path
-
-from thresher.run import run as run_cmd
 from typing import Any
 
 import yaml
 
-from thresher.agents._json import extract_json_object, extract_stream_result
+from thresher.agents._json import extract_json_object
+from thresher.agents._runner import AgentSpec, run_agent
 from thresher.config import ScanConfig
-from thresher.fs import tempfile_with
 
 logger = logging.getLogger(__name__)
 
@@ -301,69 +297,47 @@ def _run_single_analyst(
     label = f"analyst-{number}-{name}"
     logger.info("%s using max_turns=%d", label, max_turns)
 
-    prompt = _build_analyst_prompt(analyst_def)
-
     try:
         hooks_json: str | None = _build_hooks_settings_json()
     except Exception:
-        logger.warning("Failed to resolve analyst hook settings for %s", label, exc_info=True)
+        logger.warning(
+            "Failed to resolve analyst hook settings for %s", label, exc_info=True,
+        )
         hooks_json = None
 
-    model = config.model
-    env = os.environ.copy()
-    ai_env = config.ai_env()
-    env.update(ai_env)
+    spec = AgentSpec(
+        label=label,
+        prompt=_build_analyst_prompt(analyst_def),
+        allowed_tools=["Read", "Glob", "Grep", "Bash"],
+        max_turns=max_turns,
+        timeout=3600,
+        cwd=target_dir,
+        hooks_settings_json=hooks_json,
+    )
 
     logger.info("Invoking %s", label)
     start_time = time.monotonic()
-    with ExitStack() as stack:
-        prompt_path = stack.enter_context(
-            tempfile_with(prompt, suffix=f"_analyst_{number}_prompt.txt")
-        )
-        cmd = [
-            "claude",
-            "-p", str(prompt_path),
-            "--model", model,
-            "--allowedTools", "Read,Glob,Grep,Bash",
-            "--output-format", "stream-json",
-            "--verbose",
-            "--max-turns", str(max_turns),
-        ]
-        if hooks_json is not None:
-            settings_path = stack.enter_context(
-                tempfile_with(hooks_json, suffix="_analyst_hooks_settings.json")
-            )
-            cmd.extend(["--settings", str(settings_path)])
+    agent_result = run_agent(spec, config)
+    duration = time.monotonic() - start_time
 
-        try:
-            proc = run_cmd(
-                cmd,
-                label=f"analyst-{name}",
-                env=env,
-                timeout=3600,
-                cwd=target_dir,
-            )
-            raw_output = proc.stdout.decode(errors="replace")
-        except Exception as exc:
-            logger.error("%s invocation failed: %s", label, exc)
-            return None
-    end_time = time.monotonic()
-    duration = end_time - start_time
+    if agent_result.failed:
+        return None
 
-    text, turns = extract_stream_result(raw_output)
-    findings = _parse_analyst_json_output(text, analyst_def)
+    findings = _parse_analyst_json_output(agent_result.result_text, analyst_def)
     logger.info(
         "Analyst %s completed in %.1fs (num_turns=%d): %d findings, risk_score=%s",
         name,
         duration,
-        turns,
+        agent_result.num_turns,
         len(findings.get("findings", [])),
         findings.get("risk_score", "?"),
     )
 
-    # Attach timing metadata to the findings dict for the caller
-    findings["_timing"] = {"name": name, "duration": duration, "turns": turns}
-
+    findings["_timing"] = {
+        "name": name,
+        "duration": duration,
+        "turns": agent_result.num_turns,
+    }
     return findings
 
 

@@ -14,9 +14,8 @@ from typing import Any
 
 import yaml
 
+from thresher.agents._runner import AgentSpec, run_agent
 from thresher.config import ScanConfig
-from thresher.fs import tempfile_with
-from thresher.run import run as run_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -181,49 +180,29 @@ def run_synthesize_agent(
         True if the agent produced the expected output files.
     """
     definition = _load_definition()
-    tools = ",".join(definition["tools"])
-    max_turns = getattr(config, "synthesize_max_turns", None) or definition["max_turns"]
+    max_turns = (
+        getattr(config, "synthesize_max_turns", None) or definition["max_turns"]
+    )
 
     # Write synthesis input to report directory
     input_path = f"{report_dir}/synthesis_input.md"
     _write_file(input_path, synthesis_input)
 
-    # Build and write prompt from YAML definition template
-    synthesis_prompt = _build_synthesis_prompt(definition, report_dir, input_path)
+    spec = AgentSpec(
+        label="synthesize",
+        prompt=_build_synthesis_prompt(definition, report_dir, input_path),
+        allowed_tools=definition["tools"],
+        max_turns=max_turns,
+        timeout=1800,
+        cwd=report_dir,
+    )
 
-    with tempfile_with(synthesis_prompt, suffix="_synthesis_prompt.txt") as prompt_path:
-        model = config.model
-        cmd = [
-            "claude",
-            "-p", str(prompt_path),
-            "--model", model,
-            "--allowedTools", tools,
-            "--output-format", "stream-json",
-            "--verbose",
-            "--max-turns", str(max_turns),
-        ]
+    logger.info("Invoking synthesis agent (max_turns=%d)", max_turns)
+    agent_result = run_agent(spec, config)
+    logger.info(
+        "Synthesis agent completed: exit_code=%d", agent_result.returncode,
+    )
 
-        env = os.environ.copy()
-        ai_env = config.ai_env()
-        env.update(ai_env)
-
-        logger.info("Invoking synthesis agent (max_turns=%d)", max_turns)
-        try:
-            result = run_cmd(
-                cmd,
-                label="synthesize",
-                cwd=report_dir,
-                env=env,
-                timeout=1800,
-            )
-            exit_code = result.returncode
-        except Exception as exc:
-            logger.warning("Synthesis agent failed: %s", exc)
-            exit_code = 1
-
-        logger.info("Synthesis agent completed: exit_code=%d", exit_code)
-
-    # Verify expected output files exist
     agent_succeeded = (
         os.path.isfile(f"{report_dir}/executive-summary.md")
         and os.path.isfile(f"{report_dir}/detailed-report.md")

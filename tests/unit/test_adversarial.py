@@ -173,10 +173,11 @@ class TestParseAdversarialOutput:
         result = _parse_adversarial_output("")
         assert "error" in result
 
-    def test_stream_json(self):
+    def test_envelope_unwrap(self):
+        """Stream-JSON ``result`` envelopes are unwrapped through extract_json_object."""
         inner = {"results": [{"verdict": "downgraded"}]}
-        stream = f'{{"type":"result","result":{json.dumps(json.dumps(inner))}}}\n'
-        result = _parse_adversarial_output(stream)
+        envelope = f'{{"result":{json.dumps(json.dumps(inner))}}}'
+        result = _parse_adversarial_output(envelope)
         assert len(result["results"]) == 1
 
     def test_code_block(self):

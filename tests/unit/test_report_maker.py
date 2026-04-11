@@ -1,16 +1,20 @@
 """Tests for the report-maker agent runner."""
 
 import json
-import subprocess
-from pathlib import Path
 from unittest.mock import patch, MagicMock
-
-import pytest
 
 from thresher.config import ScanConfig
 
 
-def _mock_stream_output(report_data: dict) -> bytes:
+def _mock_popen(returncode=0, stdout=b""):
+    mock = MagicMock()
+    mock.stdout = iter(stdout.splitlines(keepends=True)) if stdout else iter([])
+    mock.returncode = returncode
+    mock.wait.return_value = returncode
+    return mock
+
+
+def _stream_bytes(report_data: dict) -> bytes:
     """Build stream-json output containing a result with report data."""
     lines = [
         json.dumps({"type": "assistant", "message": {"content": [{"text": "Working..."}]}}),
@@ -43,19 +47,16 @@ def _valid_report_data():
     }
 
 
-@patch("thresher.agents.report_maker.run_cmd")
-def test_builds_correct_cmd(mock_run):
+@patch("thresher.run._popen")
+def test_builds_correct_cmd(mock_popen):
     from thresher.agents.report_maker import run_report_maker
 
-    mock_run.return_value = MagicMock(
-        stdout=_mock_stream_output(_valid_report_data()),
-        returncode=0,
-    )
+    mock_popen.return_value = _mock_popen(stdout=_stream_bytes(_valid_report_data()))
     config = ScanConfig(repo_url="https://github.com/owner/repo", model="sonnet")
     run_report_maker(config, "/tmp/output")
 
-    cmd = mock_run.call_args[0][0]
-    assert "claude" in cmd[0]
+    cmd = mock_popen.call_args[0][0]
+    assert cmd[0] == "claude"
     assert "--bare" not in cmd
     assert "--settings" in cmd
     assert "--output-format" in cmd
@@ -63,15 +64,12 @@ def test_builds_correct_cmd(mock_run):
     assert "--verbose" in cmd
 
 
-@patch("thresher.agents.report_maker.run_cmd")
-def test_parses_valid_output(mock_run):
+@patch("thresher.run._popen")
+def test_parses_valid_output(mock_popen):
     from thresher.agents.report_maker import run_report_maker
 
     expected = _valid_report_data()
-    mock_run.return_value = MagicMock(
-        stdout=_mock_stream_output(expected),
-        returncode=0,
-    )
+    mock_popen.return_value = _mock_popen(stdout=_stream_bytes(expected))
     config = ScanConfig(repo_url="https://github.com/owner/repo")
     result = run_report_maker(config, "/tmp/output")
 
@@ -80,52 +78,46 @@ def test_parses_valid_output(mock_run):
     assert result["verdict"]["severity"] == "low"
 
 
-@patch("thresher.agents.report_maker.run_cmd")
-def test_returns_none_on_failure(mock_run):
+@patch("thresher.run._popen")
+def test_returns_none_on_failure(mock_popen):
     from thresher.agents.report_maker import run_report_maker
 
-    mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=3600)
+    mock_popen.side_effect = RuntimeError("claude crashed")
     config = ScanConfig(repo_url="https://github.com/owner/repo")
     result = run_report_maker(config, "/tmp/output")
 
     assert result is None
 
 
-@patch("thresher.agents.report_maker.run_cmd")
-def test_uses_custom_max_turns(mock_run):
+@patch("thresher.run._popen")
+def test_uses_custom_max_turns(mock_popen):
     from thresher.agents.report_maker import run_report_maker
 
-    mock_run.return_value = MagicMock(
-        stdout=_mock_stream_output(_valid_report_data()),
-        returncode=0,
-    )
+    mock_popen.return_value = _mock_popen(stdout=_stream_bytes(_valid_report_data()))
     config = ScanConfig(
         repo_url="https://github.com/owner/repo",
         report_maker_max_turns=25,
     )
     run_report_maker(config, "/tmp/output")
 
-    cmd = mock_run.call_args[0][0]
+    cmd = mock_popen.call_args[0][0]
     turns_idx = cmd.index("--max-turns") + 1
     assert cmd[turns_idx] == "25"
 
 
-@patch("thresher.agents.report_maker.run_cmd")
-def test_cwd_defaults_to_output_dir(mock_run, tmp_path):
+@patch("thresher.run._popen")
+def test_cwd_defaults_to_output_dir(mock_popen, tmp_path):
     """Architectural change: report-maker now runs as a final formatter
     that consumes everything in the report output directory (synthesis
     markdown, per-analyst files, scanner JSONs). Its cwd must be the
     output dir, not /opt/scan-results."""
     from thresher.agents.report_maker import run_report_maker
 
-    mock_run.return_value = MagicMock(
-        stdout=_mock_stream_output(_valid_report_data()),
-        returncode=0,
-    )
+    mock_popen.return_value = _mock_popen(stdout=_stream_bytes(_valid_report_data()))
     config = ScanConfig(repo_url="https://github.com/owner/repo")
     run_report_maker(config, str(tmp_path))
 
-    kwargs = mock_run.call_args[1]
+    kwargs = mock_popen.call_args[1]
     assert kwargs.get("cwd") == str(tmp_path), (
         f"report-maker cwd should be output_dir, got {kwargs.get('cwd')!r}"
     )

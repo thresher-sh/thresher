@@ -10,19 +10,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from collections import defaultdict
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
-from thresher.run import run as run_cmd
-
-from thresher.agents._json import extract_json_object, extract_stream_result
+from thresher.agents._json import extract_json_object
+from thresher.agents._runner import AgentSpec, run_agent
 from thresher.agents.prompts import ADVERSARIAL_SYSTEM_PROMPT
 from thresher.config import ScanConfig
-from thresher.fs import tempfile_with
 
 logger = logging.getLogger(__name__)
 
@@ -278,26 +274,25 @@ def _normalize_adversarial_schema(parsed: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _parse_adversarial_output(raw_output: str) -> dict[str, Any]:
-    """Parse JSON from the adversarial agent output.
+def _parse_adversarial_output(text: str) -> dict[str, Any]:
+    """Parse the adversarial JSON object from the agent's result text.
 
     Handles both the native adversarial schema (``results``) and the
     analyst-forced schema (``findings`` with verdict fields), normalizing
     the latter to the expected adversarial format.
     """
-    if not raw_output or not raw_output.strip():
+    if not text or not text.strip():
         logger.warning("Empty output from adversarial agent")
         return {"results": [], "error": "Agent returned empty output"}
 
-    text, _ = extract_stream_result(raw_output)
     parsed = extract_json_object(text)
     if parsed is not None:
         return _normalize_adversarial_schema(parsed)
 
     logger.warning(
-        "Could not parse adversarial output. Raw (first 500 chars): %s", text[:500],
+        "Could not parse adversarial output. Result (first 500 chars): %s", text[:500],
     )
-    return {"results": [], "error": f"Parse failed. Raw: {text[:500]}"}
+    return {"results": [], "error": f"Parse failed. Result: {text[:500]}"}
 
 
 def _merge_adversarial_results(
@@ -488,55 +483,28 @@ def run_adversarial_verification(
         "Starting adversarial verification of %d finding(s)", len(high_risk)
     )
 
-    prompt = _build_adversarial_prompt(high_risk)
-
     try:
         hooks_json: str | None = _build_hooks_settings_json()
     except Exception:
         logger.warning("Failed to resolve adversarial hook settings", exc_info=True)
         hooks_json = None
 
-    model = config.model
-    max_turns = config.adversarial_max_turns or 20
-
-    env = os.environ.copy()
-    ai_env = config.ai_env()
-    env.update(ai_env)
+    spec = AgentSpec(
+        label="adversarial",
+        prompt=_build_adversarial_prompt(high_risk),
+        allowed_tools=["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+        max_turns=config.adversarial_max_turns or 20,
+        timeout=2400,
+        cwd=target_dir,
+        hooks_settings_json=hooks_json,
+    )
 
     logger.info("Invoking adversarial agent")
-    with ExitStack() as stack:
-        prompt_path = stack.enter_context(
-            tempfile_with(prompt, suffix="_adversarial_prompt.txt")
-        )
-        cmd = [
-            "claude",
-            "-p", str(prompt_path),
-            "--model", model,
-            "--allowedTools", "Read,Glob,Grep,WebSearch,WebFetch",
-            "--output-format", "stream-json",
-            "--verbose",
-            "--max-turns", str(max_turns),
-        ]
-        if hooks_json is not None:
-            settings_path = stack.enter_context(
-                tempfile_with(hooks_json, suffix="_adversarial_hooks_settings.json")
-            )
-            cmd.extend(["--settings", str(settings_path)])
+    agent_result = run_agent(spec, config)
+    if agent_result.failed:
+        return None
 
-        try:
-            proc = run_cmd(
-                cmd,
-                label="adversarial",
-                env=env,
-                timeout=2400,
-                cwd=target_dir,
-            )
-            raw_output = proc.stdout.decode(errors="replace")
-        except Exception as exc:
-            logger.error("Adversarial agent invocation failed: %s", exc)
-            return None
-
-    verification = _parse_adversarial_output(raw_output)
+    verification = _parse_adversarial_output(agent_result.result_text)
     logger.info(
         "Adversarial verification completed: confirmed=%s, downgraded=%s",
         verification.get("confirmed_count", "?"),
