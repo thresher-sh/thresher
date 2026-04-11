@@ -386,11 +386,24 @@ def report_html(
         html_path = render_report(report_data, staged_artifacts)
         finalize_output(config, staged_dir=staged_artifacts)
         t.record()
-
-    # Write benchmark reports to the output directory
-    output_dir = config.output_dir or staged_artifacts
-    benchmark.finalize(output_dir)
     return html_path
+
+
+def benchmark_report(
+    report_html: str,
+    staged_artifacts: str,
+    config: ScanConfig,
+    benchmark: BenchmarkCollector,
+) -> None:
+    """Write benchmark.json and benchmark.md to the output directory.
+
+    This is the last node in the DAG so it captures timing for every
+    preceding stage including report_html.
+    """
+    from thresher.report.benchmarks import create_report
+
+    output_dir = config.output_dir or staged_artifacts
+    create_report(benchmark, output_dir, model=config.model)
 
 
 # ── Pipeline Runner ─────────────────────────────────────────────────
@@ -419,7 +432,7 @@ def run_pipeline(scan_config: ScanConfig) -> str:
 
     logger.info("Executing pipeline DAG")
     result = dr.execute(
-        final_vars=["report_html"],
+        final_vars=["report_html", "benchmark_report"],
         inputs=inputs,
     )
 

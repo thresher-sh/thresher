@@ -1,0 +1,69 @@
+{
+  "_comment": "Claude API pricing per million tokens (USD). Source: https://platform.claude.com/docs/en/about-claude/pricing",
+  "_updated": "2026-04-11",
+  "models": {
+    "claude-opus-4-6": {
+      "aliases": ["opus", "opus4.6", "opus-4.6"],
+      "input_per_mtok": 5.0,
+      "output_per_mtok": 25.0,
+      "cache_write_per_mtok": 6.25,
+      "cache_read_per_mtok": 0.50
+    },
+    "claude-opus-4-5": {
+      "aliases": ["opus4.5", "opus-4.5"],
+      "input_per_mtok": 5.0,
+      "output_per_mtok": 25.0,
+      "cache_write_per_mtok": 6.25,
+      "cache_read_per_mtok": 0.50
+    },
+    "claude-opus-4-1": {
+      "aliases": ["opus4.1", "opus-4.1"],
+      "input_per_mtok": 15.0,
+      "output_per_mtok": 75.0,
+      "cache_write_per_mtok": 18.75,
+      "cache_read_per_mtok": 1.50
+    },
+    "claude-opus-4": {
+      "aliases": ["opus4", "opus-4"],
+      "input_per_mtok": 15.0,
+      "output_per_mtok": 75.0,
+      "cache_write_per_mtok": 18.75,
+      "cache_read_per_mtok": 1.50
+    },
+    "claude-sonnet-4-6": {
+      "aliases": ["sonnet", "sonnet4.6", "sonnet-4.6"],
+      "input_per_mtok": 3.0,
+      "output_per_mtok": 15.0,
+      "cache_write_per_mtok": 3.75,
+      "cache_read_per_mtok": 0.30
+    },
+    "claude-sonnet-4-5": {
+      "aliases": ["sonnet4.5", "sonnet-4.5"],
+      "input_per_mtok": 3.0,
+      "output_per_mtok": 15.0,
+      "cache_write_per_mtok": 3.75,
+      "cache_read_per_mtok": 0.30
+    },
+    "claude-sonnet-4": {
+      "aliases": ["sonnet4", "sonnet-4"],
+      "input_per_mtok": 3.0,
+      "output_per_mtok": 15.0,
+      "cache_write_per_mtok": 3.75,
+      "cache_read_per_mtok": 0.30
+    },
+    "claude-haiku-4-5": {
+      "aliases": ["haiku", "haiku4.5", "haiku-4.5"],
+      "input_per_mtok": 1.0,
+      "output_per_mtok": 5.0,
+      "cache_write_per_mtok": 1.25,
+      "cache_read_per_mtok": 0.10
+    },
+    "claude-haiku-3-5": {
+      "aliases": ["haiku3.5", "haiku-3.5"],
+      "input_per_mtok": 0.80,
+      "output_per_mtok": 4.0,
+      "cache_write_per_mtok": 1.0,
+      "cache_read_per_mtok": 0.08
+    }
+  }
+}

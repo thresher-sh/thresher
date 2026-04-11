@@ -36,3 +36,8 @@ Report is:
 Report is saved as json and markdown.
 
 Reason for both is json allows us to collect over time and then build a script to show changes, totals etc... Prepares us to save to a database later if we want.
+
+
+## Coding practice
+
+Report side features should go into `./src/thresher/report/benchmarks.py` and the collector logic should go into `./src/thresher/harness/benchmarks.py`. This makes it very obvious which logic lives where.
