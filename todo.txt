@@ -1,21 +1,34 @@
-All below need to be done for v0.3.0 to be ready
+v3 Todos
 [x] migrate to docker and flat app vs shell files and random complexity...
 [x] Apply fixes for findings in @documentation/v3-planning/scan-results-review.md
-[ ] Apply fixes for: /Users/josephduncan/github/thresher/thresher-reports/aegra-20260409-180323/inspection-report.md
+[x] Apply fixes for: /Users/josephduncan/github/thresher/thresher-reports/aegra-20260409-180323/inspection-report.md
 [x] continue testing v0.3.0 docker changes (all shell scripts to python, so we need to verify everything)
-[ ] add additional ecosystems to dependency resolution
-[ ] validate scanners are all installed and update to date correctly with their dbs etc...
+[x] validate scanners are all installed and update to date correctly with their dbs etc...
 [ ] validate tools available to claude code agents
 [ ] run without --skip-ai and validate outputs
 [x] fix reporting
 [ ] add local folder and local git support
-[ ] add gitlab support
-[ ] update pipeline to be more explicit (Lots of parallel calls hidden behind run_all commands vs pipeline orchestration of the dag for hamilton)
 [ ] add benchmarking to every pipeline dag call. Total time ran, Token Usage by model, etc...
 [ ] Review codebase for DO-NOT-REPEAT-YOURSELF opportunities
-[ ] Review tool configs and semgrep rules
 [ ] Review agent configs and prompts
 [ ] Run against 20x repos
+
+Deferred to v4
+[ ] move from hamilton to langgraph or airflow or something that is more explicit nodes and edges.
+[ ] update pipeline to be more explicit (Lots of parallel calls hidden behind run_all commands vs pipeline orchestration of the dag for hamilton)
+[ ] each pipeline item once finishes writes results to disk, no waiting. (Useful for checkpointing)
+[ ] start from pipeline stage xyz from exisitng report run (rapid debugging, pick up from failures)
+[ ] add additional ecosystems to dependency resolution
+[ ] Review tool configs and semgrep rules
 [ ] TUI, drop tmux
 [ ] Headless mode (after TUI added in)
 [ ] Incorporate https://axi.md/ notes (TOON)
+
+Deferred to v5
+[ ] add gitlab support
+[ ] looser agent harness
+[ ] always on agent
+[ ] ...
+
+
+

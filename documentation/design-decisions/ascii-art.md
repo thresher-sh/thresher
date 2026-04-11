@@ -1,0 +1,19 @@
+# ASCII Art
+
+The art is bad. Really bad... 
+
+It was supposed to be a shark.. Yeah I know it looks nothing like sharks.. 
+
+Like the Thresher shark...
+
+--- But we made a mistake. We asked claude to generate the ascii art, and it was atrocious...
+
+So bad...
+
+So very very bad...
+
+But it grew on us....
+
+... So we kept it, with its ugliness and all.. 
+
+Maybe someday we will fix it, but for now it's our horrible ascii art haha!
