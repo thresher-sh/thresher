@@ -5,16 +5,16 @@ v3 Todos
 [x] continue testing v0.3.0 docker changes (all shell scripts to python, so we need to verify everything)
 [x] validate scanners are all installed and update to date correctly with their dbs etc...
 [x] Fix claude code development context with better docs and CLAUDE.md
-[ ] validate tools available to claude code agents
-[ ] run without --skip-ai and validate outputs
+[x] validate tools available to claude code agents
 [x] fix reporting
 [ ] add local folder and local git support
 [ ] add benchmarking to every pipeline dag call. Total time ran, Token Usage by model, etc...
-[ ] Review codebase for DO-NOT-REPEAT-YOURSELF opportunities
+[x] Review codebase for DO-NOT-REPEAT-YOURSELF opportunities
 [x] Review agent configs and prompts
 [ ] Run against 20x repos
 
 Deferred to v4
+[ ] run without --skip-ai and validate outputs
 [ ] move from hamilton to langgraph or airflow or something that is more explicit nodes and edges.
 [ ] update pipeline to be more explicit (Lots of parallel calls hidden behind run_all commands vs pipeline orchestration of the dag for hamilton)
 [ ] each pipeline item once finishes writes results to disk, no waiting. (Useful for checkpointing)
