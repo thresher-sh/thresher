@@ -30,7 +30,6 @@ def _resolve_schema_path() -> str:
     we resolve to the first existing file so the hook never has to guess.
     """
     candidates = [
-        Path("/opt/templates/report/report_schema.json"),
         Path(__file__).parent.parent / "report" / "schema" / "report_schema.json",
     ]
     for c in candidates:

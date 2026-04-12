@@ -165,7 +165,7 @@ RUN mkdir -p \
 
 # ── Custom rules ──────────────────────────────────────────────────────────────
 COPY rules/ /opt/rules/
-COPY templates/ /opt/templates/
+
 
 # ── Thresher application (last layer — changes most often) ───────────────────
 COPY pyproject.toml /app/pyproject.toml

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 
@@ -25,12 +26,7 @@ def _resolve_schema_path() -> str | None:
     explicit = os.environ.get("REPORT_SCHEMA_PATH")
     if explicit:
         return explicit if os.path.isfile(explicit) else None
-    for candidate in (
-        "/opt/templates/report/report_schema.json",
-        os.path.expanduser(
-            "~/github/thresher/src/thresher/report/schema/report_schema.json",
-        ),
-    ):
+    for candidate in (Path(__file__).parent.parent.parent.parent / "report" / "schema" / "report_schema.json",):
         if os.path.isfile(candidate):
             return candidate
     return None

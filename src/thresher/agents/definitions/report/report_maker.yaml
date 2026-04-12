@@ -42,8 +42,8 @@ prompt: |
      coverage when it isn't.
 
   Schema reference:
-  10. `templates/report/report_schema.json` — JSON Schema your output
-      must conform to.
+  10. The JSON Schema file path is provided via the `REPORT_SCHEMA_PATH`
+      environment variable — read that file to validate your output conforms.
 
   ## Output Requirements
 

@@ -49,3 +49,16 @@ Tools:
 - node
 - go
 - cargo
+
+## Agents Harness Tools
+
+Before we started with a restricted set of tools. But agents are running inside a container so we can let them roam a bit more free. 
+
+All agents should have access to:
+
+- read
+- write
+- edit
+- bash
+- webfetch
+- websearch

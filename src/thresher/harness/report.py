@@ -327,7 +327,6 @@ def render_report(
 
     if template_dir is None:
         candidates = [
-            Path("/opt/templates/report"),
             Path(__file__).parent.parent / "report" / "templates",
         ]
         for candidate in candidates:

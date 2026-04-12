@@ -14,7 +14,9 @@
         "rm *": "deny",
         "grep *": "allow",
         "ruff *": "allow",
-        "python -m pytest *": "allow"
+        "python -m pytest *": "allow",
+        "echo *": "allow",
+        "mkdir *": "allow"
       },
       "webfetch": "ask",
       "websearch": "ask",
