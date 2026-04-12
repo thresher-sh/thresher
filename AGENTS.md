@@ -179,3 +179,14 @@ deserializes it. The harness never reads thresher.toml directly.
 ## Additional docs
 
 See @documentation/design-decisions/* for all relevant design information about repo and project.
+
+## Tool Usage
+
+Use the `uv` ecosystem tools.
+
+- `uv run pytest`
+- `uv run ruff`
+- `uv add`
+- `uv run python`
+
+Do not use pip or python directly.
