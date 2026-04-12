@@ -13,7 +13,8 @@
         "npm *": "allow",
         "rm *": "deny",
         "grep *": "allow",
-        "ruff *": "allow"
+        "ruff *": "allow",
+        "python -m pytest *": "allow"
       },
       "webfetch": "ask",
       "websearch": "ask",

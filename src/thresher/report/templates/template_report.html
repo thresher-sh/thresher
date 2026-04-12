@@ -137,8 +137,8 @@
 
   .verdict-box {
     display: inline-block;
-    border: 2px solid var(--threat-red);
-    background: rgba(239, 68, 68, 0.08);
+    border: 2px solid var(--charcoal);
+    background: rgba(42, 42, 42, 0.08);
     padding: 16px 32px;
     border-radius: 8px;
     margin-bottom: 32px;
@@ -155,7 +155,7 @@
   .verdict-value {
     font-size: 28px;
     font-weight: 700;
-    color: var(--threat-red);
+    color: var(--steel);
     letter-spacing: 2px;
   }
 
@@ -834,25 +834,25 @@ function renderHero(d) {
   var m = d.meta;
   var v = d.verdict || {};
   var c = d.counts || {};
-  var borderColor = v.severity === 'critical' ? 'var(--threat-red)' :
-                    v.severity === 'high' ? 'var(--amber)' :
-                    v.severity === 'medium' ? 'var(--steel)' : 'var(--charcoal)';
+  var label = v.label || '';
+  var isGo = label === 'GO' || label === 'LOW RISK';
+  var isDanger = label === 'DO NOT USE';
+  var isWarning = label === 'FIX BEFORE USE' || label === 'REVIEW BEFORE USE' || label === 'CAUTION';
+  var borderColor = isDanger ? 'var(--threat-red)' : isWarning ? 'var(--amber)' : isGo ? 'var(--safe-green)' : 'var(--charcoal)';
   var textColor = borderColor;
-  var bgColor = v.severity === 'critical' ? 'rgba(239, 68, 68, 0.08)' :
-                v.severity === 'high' ? 'rgba(245, 158, 11, 0.08)' :
-                v.severity === 'medium' ? 'rgba(107, 114, 128, 0.08)' : 'rgba(42, 42, 42, 0.08)';
+  var bgColor = isDanger ? 'rgba(239, 68, 68, 0.08)' : isWarning ? 'rgba(245, 158, 11, 0.08)' : isGo ? 'rgba(34, 197, 94, 0.08)' : 'rgba(42, 42, 42, 0.08)';
 
   return '<div class="report-hero">' +
-    '<div class="meta">SCAN DATE: ' + m.scan_date + ' &middot; THRESHER ' + m.version + ' &middot; ' + m.scanners + ' scanners + ' + m.analysts + ' AI analysts</div>' +
-    '<h1>' + m.repo + '</h1>' +
+    '<div class="meta">SCAN DATE: ' + m.scan_date + ' &middot; THRESHER ' + m.thresher_version + ' &middot; ' + m.scanner_count + ' scanners + ' + m.analyst_count + ' AI analysts</div>' +
+    '<h1>' + m.repo_name + '</h1>' +
     '<p class="subtitle">Security Scan Report</p>' +
     '<div class="verdict-box" style="border-color: ' + borderColor + '; background: ' + bgColor + ';">' +
       '<div class="verdict-label">Verdict</div>' +
-      '<div class="verdict-value" style="color: ' + textColor + ';">' + (v.text || '') + '</div>' +
+      '<div class="verdict-value" style="color: ' + textColor + ';">' + label + '</div>' +
     '</div>' +
     '<div style="margin-top: 24px;">' +
       '<div class="summary-counts">' +
-        '<span class="count-crit">' + c.critical + ' Critical</span>' +
+        (parseInt(c.critical, 10) > 0 ? '<span class="count-crit">' + c.critical + ' Critical</span>' : '') +
         '<span class="count-high">' + c.high_scanner + ' High (scanner) + ' + c.high_ai + ' High (AI)</span>' +
         '<span class="count-med">' + c.medium + ' Medium</span>' +
       '</div>' +
@@ -863,19 +863,10 @@ function renderHero(d) {
 function renderExecSummary(d) {
   if (!d || !d.executive_summary) return '';
   var v = d.verdict || {};
-  var mits = d.mitigations || [];
-  var mitItems = '';
-  for (var i = 0; i < mits.length; i++) {
-    mitItems += '<li>' + mits[i] + '</li>';
-  }
   return '<div class="section" id="executive-summary">' +
     '<div class="section-title">// Executive Summary</div>' +
     '<div class="prose">' + d.executive_summary + '</div>' +
     '<div class="verdict-callout">' + (v.callout || '') + '</div>' +
-    '<div style="margin-top: 24px;">' +
-      '<div class="section-title" style="margin-bottom: 12px;">Required Mitigations</div>' +
-      '<ul class="mitigations">' + mitItems + '</ul>' +
-    '</div>' +
   '</div>';
 }
 
@@ -883,14 +874,21 @@ function renderFindingsBar(d) {
   if (!d || !d.counts) return '';
   var c = d.counts;
   var p0Val = parseInt(c.p0, 10) || 0;
-  var scannerCrit = parseInt(c.scanner_crit, 10) || 0;
+  var scannerCrit = parseInt(c.critical, 10) || 0;
   var highScanner = parseInt(c.high_scanner, 10) || 0;
   var med = parseInt(c.medium, 10) || 0;
   var low = parseInt(c.low, 10) || 0;
-  var aiCrit = parseInt(c.ai_crit, 10) || 0;
-  var aiHigh = parseInt(c.ai_high, 10) || 0;
-  var aiMed = parseInt(c.ai_med, 10) || 0;
-  var aiLow = parseInt(c.ai_low, 10) || 0;
+
+  var aiFindings = d.ai_findings || [];
+  var aiCrit = 0, aiHigh = 0, aiMed = 0, aiLow = 0;
+  for (var k = 0; k < aiFindings.length; k++) {
+    var s = aiFindings[k].severity;
+    if (s === 'critical') aiCrit++;
+    else if (s === 'high') aiHigh++;
+    else if (s === 'medium') aiMed++;
+    else aiLow++;
+  }
+  var aiTotal = aiCrit + aiHigh + aiMed + aiLow;
 
   // Scanner bar
   var scannerBar = '<div class="bar-label">' + c.total_scanner + ' scanner findings</div>' +
@@ -900,19 +898,24 @@ function renderFindingsBar(d) {
   } else {
     scannerBar += '<div class="bar-segment" style="flex: ' + p0Val + '; background: #fff; color: var(--deep-black);">P0: ' + c.p0 + '</div>';
   }
-  scannerBar += '<div class="bar-segment" style="flex: ' + scannerCrit + '; background: var(--threat-red);">CRIT: ' + c.scanner_crit + '</div>';
-  scannerBar += '<div class="bar-segment" style="flex: ' + highScanner + '; background: var(--amber);">HIGH: ' + c.high_scanner + '</div>';
-  scannerBar += '<div class="bar-segment" style="flex: ' + med + '; background: var(--steel); color: var(--deep-black);">MED: ' + c.medium + '</div>';
-  scannerBar += '<div class="bar-segment" style="flex: ' + (low > 50 ? 50 : low) + '; background: var(--charcoal); color: var(--steel);">LOW: ' + c.low + '</div>';
+  scannerBar += '<div class="bar-segment" style="flex: ' + Math.max(scannerCrit, 1) + '; background: var(--threat-red);">CRIT: ' + scannerCrit + '</div>';
+  scannerBar += '<div class="bar-segment" style="flex: ' + Math.max(highScanner, 1) + '; background: var(--amber);">HIGH: ' + c.high_scanner + '</div>';
+  scannerBar += '<div class="bar-segment" style="flex: ' + Math.max(med, 1) + '; background: var(--steel); color: var(--deep-black);">MED: ' + c.medium + '</div>';
+  scannerBar += '<div class="bar-segment" style="flex: ' + Math.max(low > 50 ? 50 : low, 1) + '; background: var(--charcoal); color: var(--steel);">LOW: ' + c.low + '</div>';
   scannerBar += '</div>';
 
-  // AI bar
-  var aiBar = '<div class="bar-label" style="margin-top: 16px;">' + c.total_ai + ' AI analyst findings</div>' +
+  // AI bar — only if there are AI findings
+  if (aiTotal === 0) return '<div class="findings-bar-section">' +
+    '<div class="section-title">// Findings Distribution</div>' +
+    scannerBar +
+  '</div>';
+
+  var aiBar = '<div class="bar-label" style="margin-top: 16px;">' + aiTotal + ' AI analyst findings</div>' +
     '<div class="bar-track" style="border-color: rgba(167, 139, 250, 0.3);">';
-  aiBar += '<div class="bar-segment" style="flex: ' + aiCrit + '; background: var(--threat-red);">CRIT: ' + c.ai_crit + '</div>';
-  aiBar += '<div class="bar-segment" style="flex: ' + aiHigh + '; background: var(--amber);">HIGH: ' + c.ai_high + '</div>';
-  aiBar += '<div class="bar-segment" style="flex: ' + aiMed + '; background: var(--steel); color: var(--deep-black);">MED: ' + c.ai_med + '</div>';
-  aiBar += '<div class="bar-segment" style="flex: ' + aiLow + '; background: var(--charcoal); color: var(--steel);">LOW: ' + c.ai_low + '</div>';
+  if (aiCrit > 0) aiBar += '<div class="bar-segment" style="flex: ' + aiCrit + '; background: var(--threat-red);">CRIT: ' + aiCrit + '</div>';
+  if (aiHigh > 0) aiBar += '<div class="bar-segment" style="flex: ' + aiHigh + '; background: var(--amber);">HIGH: ' + aiHigh + '</div>';
+  if (aiMed > 0) aiBar += '<div class="bar-segment" style="flex: ' + aiMed + '; background: var(--steel); color: var(--deep-black);">MED: ' + aiMed + '</div>';
+  if (aiLow > 0) aiBar += '<div class="bar-segment" style="flex: ' + aiLow + '; background: var(--charcoal); color: var(--steel);">LOW: ' + aiLow + '</div>';
   aiBar += '</div>';
 
   return '<div class="findings-bar-section">' +
@@ -1041,13 +1044,15 @@ function renderTrustSignals(d) {
   if (!d || !d.trust_signals || d.trust_signals.length === 0) return '';
   var items = '';
   for (var i = 0; i < d.trust_signals.length; i++) {
+    var sig = d.trust_signals[i];
+    var text = typeof sig === 'string' ? sig : (sig.text || '');
     items += '<div class="trust-item">' +
-      '<span class="trust-icon">!</span>' +
-      d.trust_signals[i] +
+      '<span class="trust-icon" style="color: var(--safe-green);">✓</span>' +
+      text +
     '</div>';
   }
   return '<div class="section" id="trust">' +
-    '<div class="section-title">// Infrastructure & Trust Assessment</div>' +
+    '<div class="section-title">// Infrastructure & Trust</div>' +
     '<h2>Repository health signals</h2>' +
     '<div class="trust-items">' + items + '</div>' +
   '</div>';
@@ -1058,12 +1063,13 @@ function renderUpgrades(d) {
   var rows = '';
   for (var i = 0; i < d.dependency_upgrades.length; i++) {
     var u = d.dependency_upgrades[i];
+    var sevLabel = u.severity ? (u.severity.charAt(0).toUpperCase() + u.severity.slice(1)) : '';
     var cvssCls = u.severity === 'critical' ? 'cvss-crit' : u.severity === 'high' ? 'cvss-high' : 'cvss-med';
     rows += '<tr>' +
       '<td class="pkg-name">' + u.package + '</td>' +
-      '<td class="ver-old">' + u.previous + '</td>' +
-      '<td class="ver-new">' + u.fixed + '</td>' +
-      '<td><span class="cvss-tag ' + cvssCls + '">' + u.severity_label + '</span></td>' +
+      '<td class="ver-old">' + u.old_version + '</td>' +
+      '<td class="ver-new">' + u.new_version + '</td>' +
+      '<td><span class="cvss-tag ' + cvssCls + '">' + sevLabel + '</span></td>' +
       '<td class="cve-tag">' + u.cves + '</td>' +
     '</tr>';
   }
@@ -1073,12 +1079,60 @@ function renderUpgrades(d) {
     '<div class="table-wrap">' +
       '<table class="upgrade-table">' +
         '<thead><tr>' +
-          '<th>Package</th><th>Previous</th><th>Fixed</th><th>Severity</th><th>CVEs</th>' +
+          '<th>Package</th><th>Current</th><th>Fixed</th><th>Severity</th><th>CVEs</th>' +
         '</tr></thead>' +
         '<tbody>' + rows + '</tbody>' +
       '</table>' +
     '</div>' +
   '</div>';
+}
+
+function renderMitigations(d) {
+  if (!d || !d.mitigations || d.mitigations.length === 0) return '';
+  var aiFindings = d.ai_findings || [];
+  var required = [];
+  var recommended = [];
+  for (var i = 0; i < aiFindings.length; i++) {
+    var f = aiFindings[i];
+    if (f.severity === 'critical' || f.severity === 'high') {
+      required.push(f.title + ' (' + f.file + ')');
+    } else if (f.severity === 'medium') {
+      recommended.push(f.title + ' (' + f.file + ')');
+    }
+  }
+  var mitItems = '';
+  for (var j = 0; j < d.mitigations.length; j++) {
+    mitItems += '<li>' + d.mitigations[j] + '</li>';
+  }
+  var reqItems = '';
+  for (var k = 0; k < required.length; k++) {
+    reqItems += '<li>' + required[k] + '</li>';
+  }
+  var recItems = '';
+  for (var l = 0; l < recommended.length; l++) {
+    recItems += '<li>' + recommended[l] + '</li>';
+  }
+  var html = '<div class="section" id="mitigations">';
+  html += '<div class="section-title">// Mitigations</div>';
+  html += '<h2>Required and Recommended Actions</h2>';
+  if (mitItems) {
+    html += '<div style="margin-bottom: 24px;">';
+    html += '<div style="font-size: 12px; font-weight: 700; color: var(--safe-green); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px;">General Mitigations</div>';
+    html += '<ul class="mitigations">' + mitItems + '</ul>';
+    html += '</div>';
+  }
+  if (reqItems) {
+    html += '<div style="margin-bottom: 24px;">';
+    html += '<div style="font-size: 12px; font-weight: 700; color: var(--threat-red); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px;">Required — Critical/High Findings</div>';
+    html += '<ul class="mitigations">' + reqItems + '</ul>';
+    html += '</div>';
+  }
+  if (recItems) {
+    html += '<details><summary><span class="sev-med">Recommended</span> — Medium Findings</summary>';
+    html += '<div class="details-body"><ul class="mitigations">' + recItems + '</ul></div></details>';
+  }
+  html += '</div>';
+  return html;
 }
 
 function renderRemediation(d) {
@@ -1188,6 +1242,7 @@ function renderReport(data) {
     renderAiFindings(data),
     renderTrustSignals(data),
     renderUpgrades(data),
+    renderMitigations(data),
     renderRemediation(data),
     renderPipeline(data),
     '</div>',

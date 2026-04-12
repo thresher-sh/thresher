@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from jsonschema import ValidationError, validate
 
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "templates" / "report" / "report_schema.json"
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / "src" / "thresher" / "report" / "schema" / "report_schema.json"
 
 
 @pytest.fixture(scope="module")

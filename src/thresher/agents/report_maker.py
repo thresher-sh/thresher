@@ -31,7 +31,7 @@ def _resolve_schema_path() -> str:
     """
     candidates = [
         Path("/opt/templates/report/report_schema.json"),
-        Path(__file__).parent.parent.parent.parent / "templates" / "report" / "report_schema.json",
+        Path(__file__).parent.parent / "report" / "schema" / "report_schema.json",
     ]
     for c in candidates:
         if c.is_file():

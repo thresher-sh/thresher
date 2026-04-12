@@ -19,7 +19,7 @@ _HOOKS_BASE = Path(__file__).resolve().parents[2] / "src" / "thresher" / "agents
 
 # All four agent hooks dispatch through one shared script with a schema arg.
 SHARED_HOOK = _HOOKS_BASE / "_common" / "validate_json_output.sh"
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "templates" / "report" / "report_schema.json"
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / "src" / "thresher" / "report" / "schema" / "report_schema.json"
 
 
 def _valid_report_data():

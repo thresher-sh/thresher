@@ -28,7 +28,7 @@ def _resolve_schema_path() -> str | None:
     for candidate in (
         "/opt/templates/report/report_schema.json",
         os.path.expanduser(
-            "~/github/thresher/templates/report/report_schema.json",
+            "~/github/thresher/src/thresher/report/schema/report_schema.json",
         ),
     ):
         if os.path.isfile(candidate):

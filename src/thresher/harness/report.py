@@ -328,7 +328,7 @@ def render_report(
     if template_dir is None:
         candidates = [
             Path("/opt/templates/report"),
-            Path(__file__).parent.parent.parent.parent / "templates" / "report",
+            Path(__file__).parent.parent / "report" / "templates",
         ]
         for candidate in candidates:
             if (candidate / "template_report.html").exists():
@@ -378,7 +378,7 @@ def build_fallback_report_data(config, enriched_findings: list) -> dict:
     elif counts["high"] > 0:
         verdict_label, verdict_severity = "REVIEW BEFORE USE", "high"
     elif counts["medium"] > 0:
-        verdict_label, verdict_severity = "LOW RISK", "medium"
+        verdict_label, verdict_severity = "CAUTION", "medium"
     else:
         verdict_label, verdict_severity = "LOW RISK", "low"
 
@@ -463,7 +463,7 @@ def build_fallback_report_data(config, enriched_findings: list) -> dict:
             "notes": ("AI analysts were not run." if config.skip_ai else "AI agent failed; using fallback report."),
         },
         "config": {
-            "show_cta": "true",
+            "show_cta": "false",
             "show_remediation": "false",
         },
     }

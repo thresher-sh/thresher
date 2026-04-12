@@ -661,7 +661,7 @@ class TestRenderReportPersistsJson:
 
         # Use the real render_report but with an explicit template_dir that
         # points at the project's actual template.
-        templates = Path(__file__).parent.parent.parent / "templates" / "report"
+        templates = Path(__file__).parent.parent.parent / "src" / "thresher" / "report" / "templates"
         if not (templates / "template_report.html").exists():
             pytest.skip("template_report.html not found in repo")
 

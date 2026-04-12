@@ -7,6 +7,10 @@ v3 Todos
 [x] Fix claude code development context with better docs and CLAUDE.md
 [x] validate tools available to claude code agents
 [x] fix reporting
+[ ] fix undefined in html reports
+[ ] Give agents proper tools edit/write/webfetch/websearch.
+[ ] Update agent prompts to tell them to explicity return json in an expected format...
+[ ] Define true jsonschema's for agent returns
 [ ] add local folder and local git support
 [x] add benchmarking to every pipeline dag call. Total time ran, Token Usage by model, etc...
 [x] Review codebase for DO-NOT-REPEAT-YOURSELF opportunities

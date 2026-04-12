@@ -40,7 +40,7 @@ filterwarnings = ["error"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"thresher.report" = ["data/*.json", "templates/*.j2"]
+"thresher.report" = ["data/*.json", "templates/*.j2", "templates/*.html", "templates/examples/*.html", "schema/*.json"]
 
 [tool.ruff]
 target-version = "py311"
