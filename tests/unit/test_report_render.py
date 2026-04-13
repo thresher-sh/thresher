@@ -342,3 +342,114 @@ class TestVerdictLogic:
         config = ScanConfig(repo_url="https://github.com/owner/repo")
         data = build_fallback_report_data(config, [])
         assert data["config"]["show_cta"] == "false"
+
+
+class TestVerdictRendering:
+    def test_fix_before_use_is_danger_label(self):
+        """FIX BEFORE USE should be classified as isDanger, not isWarning."""
+        template_dir = Path(__file__).parent.parent.parent / "src" / "thresher" / "report" / "templates"
+        template_src = (template_dir / "template_report.html").read_text()
+
+        # FIX BEFORE USE must appear in the isDanger condition, not isWarning
+        assert "isDanger" in template_src  # sanity check
+        # Find the isDanger line and verify FIX BEFORE USE is in it
+        for line in template_src.splitlines():
+            if "isDanger" in line and "var " in line:
+                assert "'FIX BEFORE USE'" in line, (
+                    f"'FIX BEFORE USE' should be in isDanger condition, got: {line.strip()}"
+                )
+                break
+        else:
+            raise AssertionError("Could not find 'var isDanger' line in template")
+
+    def test_fix_before_use_not_in_warning(self):
+        """FIX BEFORE USE should NOT be in the isWarning condition."""
+        template_dir = Path(__file__).parent.parent.parent / "src" / "thresher" / "report" / "templates"
+        template_src = (template_dir / "template_report.html").read_text()
+
+        for line in template_src.splitlines():
+            if "isWarning" in line and "var " in line:
+                assert "'FIX BEFORE USE'" not in line, (
+                    f"'FIX BEFORE USE' should NOT be in isWarning condition, got: {line.strip()}"
+                )
+                break
+
+
+class TestDeriveCounts:
+    def test_counts_from_findings_arrays(self):
+        """Counts should be derived from actual array contents."""
+        from thresher.harness.report import _derive_counts
+
+        scanner_findings = [
+            {"severity": "critical", "rank": "1", "package": "a", "title": "t", "cve": "CVE-1", "cvss": "9.0"},
+            {"severity": "high", "rank": "2", "package": "b", "title": "t", "cve": "CVE-2", "cvss": "7.0"},
+            {"severity": "high", "rank": "3", "package": "c", "title": "t", "cve": "CVE-3", "cvss": "7.1"},
+            {"severity": "medium", "rank": "4", "package": "d", "title": "t", "cve": "CVE-4", "cvss": "5.0"},
+            {"severity": "low", "rank": "5", "package": "e", "title": "t", "cve": "", "cvss": "2.0"},
+        ]
+        ai_findings = [
+            {"severity": "critical", "title": "t", "file": "f", "description": "d", "confidence": "high", "analysts": ["a"]},
+            {"severity": "high", "title": "t", "file": "f", "description": "d", "confidence": "high", "analysts": ["a"]},
+            {"severity": "medium", "title": "t", "file": "f", "description": "d", "confidence": "med", "analysts": ["b"]},
+            {"severity": "low", "title": "t", "file": "f", "description": "d", "confidence": "low", "analysts": ["c"]},
+            {"severity": "low", "title": "t", "file": "f", "description": "d", "confidence": "low", "analysts": ["c"]},
+        ]
+        counts = _derive_counts(scanner_findings, ai_findings)
+
+        assert counts["total_scanner"] == "5"
+        assert counts["total_ai"] == "5"
+        assert counts["critical"] == "2"  # 1 scanner + 1 AI
+        assert counts["high_scanner"] == "2"
+        assert counts["high_ai"] == "1"
+        assert counts["medium"] == "2"  # 1 scanner + 1 AI
+        assert counts["low"] == "3"  # 1 scanner + 2 AI
+        assert counts["p0"] == "0"
+
+    def test_empty_findings(self):
+        from thresher.harness.report import _derive_counts
+
+        counts = _derive_counts([], [])
+        assert counts["total_scanner"] == "0"
+        assert counts["total_ai"] == "0"
+        assert counts["p0"] == "0"
+        assert counts["critical"] == "0"
+
+    def test_handles_none_inputs(self):
+        """None inputs should be treated as empty lists."""
+        from thresher.harness.report import _derive_counts
+
+        counts = _derive_counts(None, None)
+        assert counts["total_scanner"] == "0"
+        assert counts["total_ai"] == "0"
+
+    def test_all_values_are_strings(self):
+        """Schema requires all count values to be strings."""
+        from thresher.harness.report import _derive_counts
+
+        counts = _derive_counts(
+            [{"severity": "high", "rank": "1", "package": "a", "title": "t", "cve": "", "cvss": "7.0"}],
+            [{"severity": "high", "title": "t", "file": "f", "description": "d", "confidence": "h", "analysts": []}],
+        )
+        for key, val in counts.items():
+            assert isinstance(val, str), f"counts['{key}'] = {val!r} is not a string"
+
+
+class TestFallbackReportData:
+    def test_fallback_report_data_verdict_labels_in_schema(self):
+        """All fallback verdict labels must be in the schema enum."""
+        from thresher.harness.report import build_fallback_report_data
+        from thresher.config import ScanConfig
+
+        valid_labels = {"LOW RISK", "REVIEW BEFORE USE", "FIX BEFORE USE", "CAUTION"}
+
+        for sev, expected_label in [
+            ("critical", "FIX BEFORE USE"),
+            ("high", "REVIEW BEFORE USE"),
+            ("medium", "CAUTION"),
+        ]:
+            config = ScanConfig(repo_url="https://github.com/test/repo", skip_ai=False)
+            findings = [{"severity": sev, "composite_priority": sev}]
+            result = build_fallback_report_data(config, findings)
+            label = result["verdict"]["label"]
+            assert label in valid_labels, f"Fallback label '{label}' not in schema enum"
+            assert label == expected_label

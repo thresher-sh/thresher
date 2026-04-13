@@ -308,6 +308,38 @@ def validate_report_data(report_data: dict) -> set[str]:
     return {k for k in _REQUIRED_REPORT_DATA_KEYS if k not in report_data}
 
 
+def _derive_counts(
+    scanner_findings: list[dict] | None,
+    ai_findings: list[dict] | None,
+) -> dict[str, str]:
+    """Compute finding counts from actual data arrays.
+
+    This replaces agent-generated counts with deterministic values
+    derived from the findings arrays, ensuring counts always match
+    the data the template will render.
+
+    Fields ``critical``, ``medium``, and ``low`` are combined
+    scanner + AI counts (the hero section displays them without a
+    source qualifier). ``high_scanner`` and ``high_ai`` are split
+    because the template displays them separately.
+    """
+    scanner_findings = scanner_findings or []
+    ai_findings = ai_findings or []
+    scanner_sevs = [f.get("severity", "low") for f in scanner_findings]
+    ai_sevs = [f.get("severity", "low") for f in ai_findings]
+
+    return {
+        "total_scanner": str(len(scanner_findings)),
+        "total_ai": str(len(ai_findings)),
+        "p0": "0",
+        "critical": str(scanner_sevs.count("critical") + ai_sevs.count("critical")),
+        "high_scanner": str(scanner_sevs.count("high")),
+        "high_ai": str(ai_sevs.count("high")),
+        "medium": str(scanner_sevs.count("medium") + ai_sevs.count("medium")),
+        "low": str(scanner_sevs.count("low") + ai_sevs.count("low")),
+    }
+
+
 def render_report(
     report_data: dict,
     output_dir: str,
