@@ -8,18 +8,18 @@ v3 Todos
 [x] validate tools available to claude code agents
 [x] fix reporting
 [x] fix undefined in html reports
-[ ] Give agents proper tools edit/write/webfetch/websearch.
-[ ] Update agent prompts to tell them to explicity return json in an expected format...
-[ ] Define true jsonschema's for agent returns
+[x] Update agent prompts to tell them to explicity return json in an expected format...
+[x] Define true jsonschema's for agent returns
 [x] add local folder and local git support
 [x] fix benchmark ouputs for tokens
 [x] add benchmarking to every pipeline dag call. Total time ran, Token Usage by model, etc...
 [x] Review codebase for DO-NOT-REPEAT-YOURSELF opportunities
 [x] Review agent configs and prompts
 [ ] Final tests till stable
-[ ] Run against 20x repos
+[ ] Run against 20x repos (1/20)
 
 Deferred to v4
+[ ] Give agents proper tools edit/write/webfetch/websearch.
 [ ] run without --skip-ai and validate outputs
 [ ] move from hamilton to langgraph or airflow or something that is more explicit nodes and edges.
 [ ] update pipeline to be more explicit (Lots of parallel calls hidden behind run_all commands vs pipeline orchestration of the dag for hamilton)
