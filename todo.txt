@@ -15,8 +15,8 @@ v3 Todos
 [x] add benchmarking to every pipeline dag call. Total time ran, Token Usage by model, etc...
 [x] Review codebase for DO-NOT-REPEAT-YOURSELF opportunities
 [x] Review agent configs and prompts
-[ ] Final tests till stable
-[ ] Run against 20x repos (1/20)
+[x] Final tests till stable
+[ ] Run against 20x repos (2/20)
 
 Deferred to v4
 [ ] Give agents proper tools edit/write/webfetch/websearch.

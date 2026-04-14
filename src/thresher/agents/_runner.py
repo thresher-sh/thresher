@@ -86,6 +86,7 @@ class AgentResult:
     failed: bool = False
     error: str | None = None
     token_usage: dict[str, int] = field(default_factory=dict)
+    model_usage_by_model: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 def run_agent(spec: AgentSpec, config: ScanConfig) -> AgentResult:
@@ -153,4 +154,5 @@ def run_agent(spec: AgentSpec, config: ScanConfig) -> AgentResult:
         num_turns=stream_result.num_turns,
         returncode=proc.returncode,
         token_usage=stream_result.token_usage,
+        model_usage_by_model=stream_result.model_usage_by_model,
     )

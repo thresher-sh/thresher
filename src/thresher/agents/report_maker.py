@@ -120,6 +120,7 @@ def run_report_maker(
             "duration": duration,
             "turns": agent_result.num_turns,
             "token_usage": agent_result.token_usage,
+            "model_usage": agent_result.model_usage_by_model,
         }
         logger.info("Report maker agent completed in %.1fs", duration)
     else:

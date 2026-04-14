@@ -83,6 +83,7 @@ def run_predep_discovery(
         "duration": duration,
         "turns": agent_result.num_turns,
         "token_usage": agent_result.token_usage,
+        "model_usage": agent_result.model_usage_by_model,
     }
 
     # Inject the high_risk_dep flag so downstream can know whether

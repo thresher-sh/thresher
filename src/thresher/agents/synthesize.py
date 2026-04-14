@@ -209,4 +209,5 @@ def run_synthesize_agent(
         "duration": duration,
         "turns": agent_result.num_turns,
         "token_usage": agent_result.token_usage,
+        "model_usage": agent_result.model_usage_by_model,
     }

@@ -45,29 +45,65 @@ class TestBenchmarkCollector:
         c.add(StageStats(name="analyst-behaviorist", runtime_seconds=3.0))
         assert len(c.analyst_stages()) == 2
 
-    def test_analyst_stages_includes_aggregate_analysts_stage(self):
-        """Pipeline records aggregate 'analysts' stage, not individual analyst-* stages."""
+    def test_analyst_stages_excludes_aggregate_analysts_stage(self):
         c = BenchmarkCollector()
         c.add(StageStats(name="clone", runtime_seconds=1.0))
         c.add(StageStats(name="analysts", runtime_seconds=45.0, findings_count=10))
         c.add(StageStats(name="synthesize", runtime_seconds=5.0))
         analyst_stages = c.analyst_stages()
-        assert len(analyst_stages) == 1
-        assert analyst_stages[0].name == "analysts"
-        assert analyst_stages[0].runtime_seconds == 45.0
-        assert analyst_stages[0].findings_count == 10
+        assert analyst_stages == []
 
-    def test_analyst_stages_includes_both_prefix_and_aggregate(self):
-        """Should include both analyst-* prefix matches and aggregate analysts stage."""
+    def test_analyst_parallel_stage_finds_aggregate_row(self):
         c = BenchmarkCollector()
         c.add(StageStats(name="analyst-paranoid", runtime_seconds=5.0))
         c.add(StageStats(name="analyst-behaviorist", runtime_seconds=3.0))
         c.add(StageStats(name="analysts", runtime_seconds=45.0))
         c.add(StageStats(name="synthesize", runtime_seconds=5.0))
-        analyst_stages = c.analyst_stages()
-        assert len(analyst_stages) == 3
-        names = {s.name for s in analyst_stages}
-        assert names == {"analyst-paranoid", "analyst-behaviorist", "analysts"}
+        analyst_stage = c.analyst_parallel_stage()
+        assert analyst_stage is not None
+        assert analyst_stage.name == "analysts"
+
+    def test_finding_lifecycle_totals_stay_distinct(self):
+        c = BenchmarkCollector()
+        c.add(
+            StageStats(
+                name="scanners",
+                runtime_seconds=1.0,
+                findings_count=301,
+                metadata={"finding_lifecycle": "raw_scanner"},
+            )
+        )
+        c.add(
+            StageStats(
+                name="analyst-01-paranoid",
+                runtime_seconds=1.0,
+                findings_count=43,
+                metadata={"finding_lifecycle": "analyst_candidate"},
+            )
+        )
+        c.add(
+            StageStats(
+                name="adversarial",
+                runtime_seconds=1.0,
+                findings_count=43,
+                metadata={"finding_lifecycle": "verified"},
+            )
+        )
+        c.add(
+            StageStats(
+                name="enrich",
+                runtime_seconds=1.0,
+                findings_count=344,
+                metadata={"finding_lifecycle": "final"},
+            )
+        )
+        assert c.finding_lifecycle_totals() == {
+            "raw_scanner_findings_total": 301,
+            "analyst_candidate_findings_total": 43,
+            "verified_findings_total": 43,
+            "final_findings_total": 344,
+        }
+        assert c.total_findings() == 344
 
     def test_pipeline_elapsed(self):
         import time

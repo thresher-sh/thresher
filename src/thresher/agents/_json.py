@@ -26,6 +26,12 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
+_TOKEN_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+)
 
 
 @dataclass
@@ -35,6 +41,36 @@ class StreamResult:
     text: str
     num_turns: int = 0
     token_usage: dict[str, int] = field(default_factory=dict)
+    model_usage_by_model: dict[str, dict[str, int]] = field(default_factory=dict)
+
+
+def _normalize_usage(raw_usage: Any) -> dict[str, int]:
+    if not isinstance(raw_usage, dict):
+        return {}
+    usage = {key: int(raw_usage.get(key, 0) or 0) for key in _TOKEN_KEYS}
+    if any(usage.values()):
+        return usage
+    return {}
+
+
+def _usage_total(usage: dict[str, int]) -> int:
+    return sum(usage.get(key, 0) for key in _TOKEN_KEYS)
+
+
+def _sum_usage(usages: list[dict[str, int]]) -> dict[str, int]:
+    totals = {key: 0 for key in _TOKEN_KEYS}
+    for usage in usages:
+        for key in _TOKEN_KEYS:
+            totals[key] += usage.get(key, 0)
+    if any(totals.values()):
+        return totals
+    return {}
+
+
+def _choose_more_complete_usage(left: dict[str, int], right: dict[str, int]) -> dict[str, int]:
+    if _usage_total(right) > _usage_total(left):
+        return right
+    return left
 
 
 def _stringify_result(value: Any) -> str:
@@ -68,7 +104,10 @@ def extract_stream_result(raw_output: str) -> StreamResult:
     error_reason = ""
     last_assistant_text = ""
     num_turns = 0
-    token_usage: dict[str, int] = {}
+    result_usage: dict[str, int] = {}
+    assistant_usage_by_message: dict[tuple[str, str], dict[str, int]] = {}
+    assistant_model_by_message: dict[tuple[str, str], str] = {}
+    init_model = ""
 
     for line in raw_output.strip().splitlines():
         line = line.strip()
@@ -82,6 +121,10 @@ def extract_stream_result(raw_output: str) -> StreamResult:
             continue
 
         obj_type = obj.get("type")
+        if obj_type == "system" and obj.get("subtype") == "init":
+            model = obj.get("model")
+            if isinstance(model, str):
+                init_model = model
         if obj_type == "result":
             result_text = _stringify_result(obj.get("result", ""))
             is_error = obj.get("is_error", False)
@@ -90,27 +133,21 @@ def extract_stream_result(raw_output: str) -> StreamResult:
             n = obj.get("num_turns")
             if isinstance(n, int):
                 num_turns = n
-            usage = obj.get("usage")
-            if isinstance(usage, dict):
-                token_usage = {
-                    "input_tokens": usage.get("input_tokens", 0),
-                    "output_tokens": usage.get("output_tokens", 0),
-                    "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
-                    "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
-                }
-            # Also check modelUsage which often has more complete token counts
-            model_usage = obj.get("modelUsage")
-            if isinstance(model_usage, dict):
-                mu_tokens = {
-                    "input_tokens": model_usage.get("input_tokens", 0),
-                    "output_tokens": model_usage.get("output_tokens", 0),
-                    "cache_creation_input_tokens": model_usage.get("cache_creation_input_tokens", 0),
-                    "cache_read_input_tokens": model_usage.get("cache_read_input_tokens", 0),
-                }
-                # Prefer modelUsage if it has more tokens than usage
-                if sum(mu_tokens.values()) > sum(token_usage.values()):
-                    token_usage = mu_tokens
+            result_usage = _choose_more_complete_usage(result_usage, _normalize_usage(obj.get("usage")))
+            result_usage = _choose_more_complete_usage(result_usage, _normalize_usage(obj.get("modelUsage")))
         elif obj_type == "assistant":
+            message = obj.get("message", {})
+            session_id = obj.get("session_id", "") or ""
+            message_id = message.get("id", "") or obj.get("uuid", "")
+            if session_id and message_id:
+                usage = _normalize_usage(message.get("usage"))
+                if usage:
+                    key = (session_id, message_id)
+                    existing = assistant_usage_by_message.get(key, {})
+                    assistant_usage_by_message[key] = _choose_more_complete_usage(existing, usage)
+                    model = message.get("model")
+                    if isinstance(model, str) and model:
+                        assistant_model_by_message[key] = model
             content = obj.get("message", {}).get("content", [])
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "text":
@@ -118,24 +155,59 @@ def extract_stream_result(raw_output: str) -> StreamResult:
         elif "result" in obj and obj_type is None:
             result_text = _stringify_result(obj["result"])
 
+    assistant_totals = _sum_usage(list(assistant_usage_by_message.values()))
+    token_usage = _choose_more_complete_usage(assistant_totals, result_usage)
+
+    model_usage_by_model: dict[str, dict[str, int]] = {}
+    for key, usage in assistant_usage_by_message.items():
+        model = assistant_model_by_message.get(key, "")
+        if not model:
+            continue
+        model_totals = model_usage_by_model.setdefault(model, {token_key: 0 for token_key in _TOKEN_KEYS})
+        for token_key in _TOKEN_KEYS:
+            model_totals[token_key] += usage.get(token_key, 0)
+
+    if not model_usage_by_model and token_usage and init_model:
+        model_usage_by_model[init_model] = dict(token_usage)
+
     if result_text:
-        return StreamResult(text=result_text, num_turns=num_turns, token_usage=token_usage)
+        return StreamResult(
+            text=result_text,
+            num_turns=num_turns,
+            token_usage=token_usage,
+            model_usage_by_model=model_usage_by_model,
+        )
 
     if is_error and last_assistant_text:
         logger.warning(
             "Agent ended with %s; using last assistant text as fallback",
             error_reason,
         )
-        return StreamResult(text=last_assistant_text, num_turns=num_turns, token_usage=token_usage)
+        return StreamResult(
+            text=last_assistant_text,
+            num_turns=num_turns,
+            token_usage=token_usage,
+            model_usage_by_model=model_usage_by_model,
+        )
 
     if is_error:
         logger.warning(
             "Agent ended with %s and produced no text output",
             error_reason,
         )
-        return StreamResult(text="", num_turns=num_turns, token_usage=token_usage)
+        return StreamResult(
+            text="",
+            num_turns=num_turns,
+            token_usage=token_usage,
+            model_usage_by_model=model_usage_by_model,
+        )
 
-    return StreamResult(text=raw_output, num_turns=num_turns, token_usage=token_usage)
+    return StreamResult(
+        text=raw_output,
+        num_turns=num_turns,
+        token_usage=token_usage,
+        model_usage_by_model=model_usage_by_model,
+    )
 
 
 def extract_json_object(

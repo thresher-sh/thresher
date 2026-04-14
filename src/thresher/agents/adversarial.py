@@ -527,6 +527,7 @@ def run_adversarial_verification(
         "duration": duration,
         "turns": agent_result.num_turns,
         "token_usage": agent_result.token_usage,
+        "model_usage": agent_result.model_usage_by_model,
     }
 
     # Persist a human-readable adversarial-verification.md report next to

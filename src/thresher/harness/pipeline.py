@@ -48,6 +48,7 @@ class _Timer:
         findings_count: int = 0,
         errors: list[str] | None = None,
         token_usage: dict[str, int] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> None:
         duration = time.monotonic() - self._start
         self._collector.add(
@@ -57,6 +58,7 @@ class _Timer:
                 findings_count=findings_count,
                 errors=errors or [],
                 token_usage=token_usage or {},
+                metadata=metadata or {},
             )
         )
 
@@ -120,6 +122,10 @@ def hidden_deps(cloned_path: str, config: ScanConfig, benchmark: BenchmarkCollec
         bm = result.pop("_benchmark", {})
         t.record(
             token_usage=bm.get("token_usage", {}),
+            metadata={
+                "turns": bm.get("turns", 0),
+                "model_usage": bm.get("model_usage", {}),
+            },
             errors=[result.get("summary", "")] if result.get("hidden_dependencies") is None else None,
         )
     return result
@@ -169,7 +175,11 @@ def scan_results(
         )
         total_findings = sum(len(r.findings) for r in results)
         errors = [e for r in results for e in r.errors]
-        t.record(findings_count=total_findings, errors=errors or None)
+        t.record(
+            findings_count=total_findings,
+            errors=errors or None,
+            metadata={"finding_lifecycle": "raw_scanner"},
+        )
     return results
 
 
@@ -188,13 +198,49 @@ def analyst_findings(
     with _time_stage(benchmark, "analysts") as t:
         all_findings = run_all_analysts(config, cloned_path)
         total_findings = sum(len(f.get("findings", [])) for f in all_findings)
-        # Collect token usage across all analysts
         combined_tokens: dict[str, int] = {}
+        combined_model_usage: dict[str, dict[str, int]] = {}
+        for f in all_findings:
+            timing = f.get("_timing", {})
+            analyst_name = timing.get("name") or f.get("analyst", "unknown")
+            analyst_number = f.get("analyst_number", 0)
+            benchmark.add(
+                StageStats(
+                    name=f"analyst-{analyst_number:02d}-{analyst_name}",
+                    runtime_seconds=float(timing.get("duration", 0.0) or 0.0),
+                    findings_count=len(f.get("findings", [])),
+                    token_usage=timing.get("token_usage", {}) or {},
+                    metadata={
+                        "turns": timing.get("turns", 0),
+                        "model_usage": timing.get("model_usage", {}) or {},
+                        "finding_lifecycle": "analyst_candidate",
+                    },
+                )
+            )
+            for model, usage in (timing.get("model_usage", {}) or {}).items():
+                model_totals = combined_model_usage.setdefault(
+                    model,
+                    {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                    },
+                )
+                for key, val in usage.items():
+                    model_totals[key] = model_totals.get(key, 0) + val
         for f in all_findings:
             timing = f.get("_timing", {})
             for key, val in timing.get("token_usage", {}).items():
                 combined_tokens[key] = combined_tokens.get(key, 0) + val
-        t.record(findings_count=total_findings, token_usage=combined_tokens)
+        t.record(
+            findings_count=total_findings,
+            token_usage=combined_tokens,
+            metadata={
+                "stage_kind": "analyst_parallel_block",
+                "model_usage": combined_model_usage,
+            },
+        )
     # Strip internal timing metadata now that benchmarks have consumed it
     for f in all_findings:
         f.pop("_timing", None)
@@ -222,10 +268,15 @@ def verified_findings(
             t.record(
                 findings_count=len(findings),
                 token_usage=bm.get("token_usage", {}),
+                metadata={
+                    "turns": bm.get("turns", 0),
+                    "model_usage": bm.get("model_usage", {}),
+                    "finding_lifecycle": "verified",
+                },
             )
             return findings
         items = result if result else []
-        t.record(findings_count=len(items))
+        t.record(findings_count=len(items), metadata={"finding_lifecycle": "verified"})
         return items
 
 
@@ -237,7 +288,10 @@ def enriched_findings(
 
     with _time_stage(benchmark, "enrich") as t:
         result = enrich_all_findings(scan_results, verified_findings)
-        t.record(findings_count=len(result.get("findings", [])))
+        t.record(
+            findings_count=len(result.get("findings", [])),
+            metadata={"finding_lifecycle": "final"},
+        )
     return result
 
 
@@ -294,7 +348,13 @@ def synthesized_reports(
     with _time_stage(benchmark, "synthesize") as t:
         try:
             success, bm = run_synthesize_agent(config, output_dir, synthesis_input)
-            t.record(token_usage=bm.get("token_usage", {}))
+            t.record(
+                token_usage=bm.get("token_usage", {}),
+                metadata={
+                    "turns": bm.get("turns", 0),
+                    "model_usage": bm.get("model_usage", {}),
+                },
+            )
             return success
         except Exception as exc:
             logger.warning("synthesize agent invocation failed: %s", exc)
@@ -383,12 +443,22 @@ def report_data(
             )
             t.record(
                 token_usage=bm.get("token_usage", {}),
+                metadata={
+                    "turns": bm.get("turns", 0),
+                    "model_usage": bm.get("model_usage", {}),
+                },
                 errors=[f"missing schema keys: {', '.join(sorted(missing))}"],
             )
             findings = enriched_findings.get("findings", [])
             return _inject_dep_resolution_notes(build_fallback_report_data(config, findings))
 
-        t.record(token_usage=bm.get("token_usage", {}))
+        t.record(
+            token_usage=bm.get("token_usage", {}),
+            metadata={
+                "turns": bm.get("turns", 0),
+                "model_usage": bm.get("model_usage", {}),
+            },
+        )
     return _inject_dep_resolution_notes(result)
 
 

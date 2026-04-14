@@ -51,6 +51,10 @@ class BenchmarkCollector:
         return sum(s.runtime_seconds for s in self.stages)
 
     def total_findings(self) -> int:
+        lifecycle_totals = self.finding_lifecycle_totals()
+        final_findings = lifecycle_totals["final_findings_total"]
+        if final_findings:
+            return final_findings
         return sum(s.findings_count for s in self.stages)
 
     def total_errors(self) -> list[str]:
@@ -61,14 +65,44 @@ class BenchmarkCollector:
 
     def total_token_usage(self) -> dict[str, int]:
         totals: dict[str, int] = {}
-        for s in self.stages:
+        for s in self.billable_stages():
             for key, val in s.token_usage.items():
                 totals[key] = totals.get(key, 0) + val
         return totals
 
+    def billable_stages(self) -> list[StageStats]:
+        return [stage for stage in self.stages if stage.metadata.get("stage_kind") != "analyst_parallel_block"]
+
     def analyst_stages(self) -> list[StageStats]:
-        # Match both individual "analyst-*" stages and the aggregate "analysts" stage
-        return [s for s in self.stages if s.name.startswith("analyst-") or s.name == "analysts"]
+        return [s for s in self.stages if s.name.startswith("analyst-")]
+
+    def analyst_parallel_stage(self) -> StageStats | None:
+        for stage in self.stages:
+            if stage.name == "analysts":
+                return stage
+        return None
+
+    def finding_lifecycle_totals(self) -> dict[str, int]:
+        totals = {
+            "raw_scanner_findings_total": 0,
+            "analyst_candidate_findings_total": 0,
+            "verified_findings_total": 0,
+            "final_findings_total": 0,
+        }
+        lifecycle_map = {
+            "raw_scanner": "raw_scanner_findings_total",
+            "analyst_candidate": "analyst_candidate_findings_total",
+            "verified": "verified_findings_total",
+            "final": "final_findings_total",
+        }
+        for stage in self.stages:
+            if stage.name == "analysts" or stage.metadata.get("stage_kind") == "analyst_parallel_block":
+                continue
+            lifecycle = stage.metadata.get("finding_lifecycle")
+            total_key = lifecycle_map.get(lifecycle)
+            if total_key:
+                totals[total_key] += stage.findings_count
+        return totals
 
 
 def record_stage(

@@ -224,3 +224,72 @@ def test_analyst_findings_strips_timing_metadata():
         )
     assert len(result) == 1
     assert "_timing" not in result[0], "_timing should be stripped after benchmark aggregation"
+
+
+def test_analyst_findings_records_individual_benchmark_stages():
+    config = ScanConfig(skip_ai=False)
+    collector = _collector()
+    mock_findings = [
+        {
+            "analyst": "paranoid",
+            "analyst_number": 1,
+            "findings": [{"title": "a"}, {"title": "b"}],
+            "summary": "test",
+            "risk_score": 5,
+            "_timing": {
+                "name": "paranoid",
+                "duration": 1.0,
+                "turns": 2,
+                "token_usage": {"input_tokens": 100},
+                "model_usage": {
+                    "claude-sonnet-4-6": {
+                        "input_tokens": 100,
+                        "output_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                    }
+                },
+            },
+        },
+        {
+            "analyst": "behaviorist",
+            "analyst_number": 2,
+            "findings": [{"title": "c"}],
+            "summary": "test",
+            "risk_score": 3,
+            "_timing": {
+                "name": "behaviorist",
+                "duration": 2.0,
+                "turns": 4,
+                "token_usage": {"input_tokens": 200},
+                "model_usage": {
+                    "claude-haiku-4-5-20251001": {
+                        "input_tokens": 200,
+                        "output_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                    }
+                },
+            },
+        },
+    ]
+    with patch("thresher.agents.analysts.run_all_analysts", return_value=mock_findings):
+        pipeline.analyst_findings(
+            cloned_path="/opt/target",
+            deps_path="/opt/deps",
+            scan_results=[],
+            config=config,
+            benchmark=collector,
+        )
+
+    analyst_rows = [stage for stage in collector.stages if stage.name.startswith("analyst-")]
+    assert [stage.name for stage in analyst_rows] == [
+        "analyst-01-paranoid",
+        "analyst-02-behaviorist",
+    ]
+    assert analyst_rows[0].metadata["turns"] == 2
+    assert analyst_rows[1].metadata["turns"] == 4
+
+    aggregate = next(stage for stage in collector.stages if stage.name == "analysts")
+    assert aggregate.findings_count == 3
+    assert aggregate.metadata["stage_kind"] == "analyst_parallel_block"

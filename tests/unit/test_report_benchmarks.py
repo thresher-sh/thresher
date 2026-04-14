@@ -62,14 +62,52 @@ class TestBuildReportData:
                 name="predep",
                 runtime_seconds=1.0,
                 token_usage={"input_tokens": 100, "output_tokens": 50},
+                metadata={
+                    "model_usage": {
+                        "claude-sonnet-4-6": {
+                            "input_tokens": 100,
+                            "output_tokens": 50,
+                            "cache_creation_input_tokens": 0,
+                            "cache_read_input_tokens": 0,
+                        }
+                    }
+                },
             )
         )
         c.add(
             StageStats(
-                name="analyst-paranoid",
+                name="analyst-01-paranoid",
                 runtime_seconds=5.0,
                 findings_count=3,
                 token_usage={"input_tokens": 500, "output_tokens": 200},
+                metadata={
+                    "finding_lifecycle": "analyst_candidate",
+                    "turns": 3,
+                    "model_usage": {
+                        "claude-haiku-4-5-20251001": {
+                            "input_tokens": 500,
+                            "output_tokens": 200,
+                            "cache_creation_input_tokens": 0,
+                            "cache_read_input_tokens": 0,
+                        }
+                    },
+                },
+            )
+        )
+        c.add(
+            StageStats(
+                name="analysts",
+                runtime_seconds=3.0,
+                findings_count=3,
+                metadata={"finding_lifecycle": "analyst_candidate"},
+            )
+        )
+        c.add(
+            StageStats(
+                name="enrich",
+                runtime_seconds=2.0,
+                findings_count=3,
+                metadata={"finding_lifecycle": "final"},
             )
         )
 
@@ -77,16 +115,20 @@ class TestBuildReportData:
 
         assert data["model"] == "sonnet"
         assert "pipeline_total_seconds" in data
-        assert len(data["stages"]) == 3
-        assert data["totals"]["runtime_seconds"] == 8.0
+        assert len(data["stages"]) == 5
+        assert data["totals"]["runtime_seconds"] == 13.0
         assert data["totals"]["findings_count"] == 3
         assert data["totals"]["token_usage"]["input_tokens"] == 600
         assert data["totals"]["token_usage"]["output_tokens"] == 250
         assert data["totals"]["cost"]["total_cost"] > 0
+        assert data["totals"]["raw_scanner_findings_total"] == 0
+        assert data["totals"]["analyst_candidate_findings_total"] == 3
+        assert data["totals"]["final_findings_total"] == 3
 
         # Analyst totals
         assert data["analyst_totals"]["runtime_seconds"] == 5.0
         assert data["analyst_totals"]["findings_count"] == 3
+        assert data["analyst_totals"]["wall_clock_runtime_seconds"] == 3.0
         assert data["analyst_totals"]["cost"]["total_cost"] > 0
 
     def test_stage_cost_populated_for_agentic(self):
@@ -139,7 +181,12 @@ class TestBuildMarkdown:
             StageStats(
                 name="predep",
                 runtime_seconds=1.0,
-                token_usage={"input_tokens": 100, "output_tokens": 50},
+                token_usage={
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_creation_input_tokens": 30,
+                    "cache_read_input_tokens": 40,
+                },
             )
         )
         data = build_report_data(c, model="sonnet")
@@ -149,21 +196,23 @@ class TestBuildMarkdown:
         assert "**Model:** sonnet" in md
         assert "| clone |" in md
         assert "| predep |" in md
-        assert "100/50" in md
+        assert "100/50/30/40" in md
         assert "## Analyst Totals" not in md  # no analyst stages
 
     def test_analyst_section_when_present(self):
         c = BenchmarkCollector()
         c.add(
             StageStats(
-                name="analyst-paranoid",
+                name="analyst-01-paranoid",
                 runtime_seconds=5.0,
                 token_usage={"input_tokens": 500, "output_tokens": 200},
+                metadata={"finding_lifecycle": "analyst_candidate"},
             )
         )
         data = build_report_data(c, model="sonnet")
         md = build_markdown(data)
         assert "## Analyst Totals" in md
+        assert "| analyst-01-paranoid |" in md
 
     def test_cost_column_shows_dollar(self):
         c = BenchmarkCollector()
