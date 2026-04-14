@@ -37,6 +37,9 @@ def _make_config() -> ScanConfig:
 
 
 class TestFindingRiskScore:
+    def test_explicit_risk_score_used_when_severity_missing(self):
+        assert _finding_risk_score({"risk_score": 7}) == 7
+
     def test_severity_critical(self):
         assert _finding_risk_score({"severity": "critical"}) == 9
 
@@ -54,6 +57,12 @@ class TestFindingRiskScore:
 
     def test_no_severity(self):
         assert _finding_risk_score({}) == 0
+
+    def test_severity_takes_precedence_over_explicit_risk_score(self):
+        assert _finding_risk_score({"severity": "critical", "risk_score": 3}) == 9
+
+    def test_explicit_risk_score_used_when_severity_invalid(self):
+        assert _finding_risk_score({"severity": "unknown", "risk_score": 5}) == 5
 
 
 class TestExtractHighRiskMultiAnalyst:

@@ -50,9 +50,23 @@ _SEVERITY_TO_RISK: dict[str, int] = {
 
 
 def _finding_risk_score(finding: dict[str, Any]) -> int:
-    """Map a finding's ``severity`` string to a numeric risk score."""
+    """Map a finding to a numeric risk score.
+
+    Severity remains the primary source of truth for this branch's
+    per-finding risk model. When severity is missing or invalid, fall back
+    to an explicit integer ``risk_score`` if present so we can tolerate
+    slightly different agent output shapes.
+    """
     severity = finding.get("severity", "").lower()
-    return _SEVERITY_TO_RISK.get(severity, 0)
+    mapped = _SEVERITY_TO_RISK.get(severity)
+    if mapped is not None:
+        return mapped
+
+    explicit = finding.get("risk_score")
+    if isinstance(explicit, int):
+        return explicit
+
+    return 0
 
 
 def _extract_high_risk(ai_findings: dict[str, Any]) -> list[dict[str, Any]]:

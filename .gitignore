@@ -17,3 +17,5 @@ scanner.toml
 logs/
 .DS_Store
 .worktrees/
+.ruff_cache/
+.pytest_cache/
