@@ -16,7 +16,11 @@ v3 Todos
 [x] Review codebase for DO-NOT-REPEAT-YOURSELF opportunities
 [x] Review agent configs and prompts
 [x] Final tests till stable
+[ ] Validate merge from main didn't break anything
+[ ] Test lima vm
+[ ] test docker vm
 [ ] Run against 20x repos (2/20)
+[ ] Do release
 
 Deferred to v4
 [ ] Give agents proper tools edit/write/webfetch/websearch.
