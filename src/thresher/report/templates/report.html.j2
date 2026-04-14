@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thresher — {{ repo_url }} Security Scan Report</title>
+<link rel="icon" type="image/png" href="favicon-purple-black.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --deep-black: #0a0a0a;
+    --terminal-black: #1a1a1a;
+    --charcoal: #2a2a2a;
+    --steel: #6b7280;
+    --bone: #e5e5e5;
+    --white: #fafafa;
+    --arctic: #f0f9ff;
+    --violet: #a78bfa;
+    --violet-dim: rgba(167, 139, 250, 0.15);
+    --violet-glow: rgba(167, 139, 250, 0.08);
+    --threat-red: #ef4444;
+    --safe-green: #22c55e;
+    --amber: #f59e0b;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--deep-black);
+    color: var(--bone);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  a { color: var(--violet); text-decoration: none; transition: color 0.15s; }
+  a:hover { color: var(--arctic); }
+
+  /* -- Nav ------------------------------------------------- */
+  nav {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 100;
+    background: rgba(10, 10, 10, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--charcoal);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-back {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--steel);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .nav-back:hover { color: var(--arctic); }
+
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+  .nav-links a {
+    color: var(--steel);
+    text-decoration: none;
+    font-size: 13px;
+    transition: color 0.15s;
+  }
+  .nav-links a:hover { color: var(--arctic); }
+
+  /* -- Layout ---------------------------------------------- */
+  .container {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 100px 24px 80px;
+  }
+
+  .section {
+    margin-bottom: 80px;
+  }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--violet);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 16px;
+  }
+
+  .section h2 {
+    font-family: var(--mono);
+    font-size: clamp(20px, 3vw, 28px);
+    font-weight: 700;
+    color: var(--arctic);
+    letter-spacing: -0.5px;
+    margin-bottom: 24px;
+  }
+
+  /* -- Hero ------------------------------------------------ */
+  .report-hero {
+    padding: 40px 0 60px;
+    border-bottom: 1px solid var(--charcoal);
+    margin-bottom: 60px;
+  }
+
+  .report-hero .meta {
+    font-size: 12px;
+    color: var(--steel);
+    margin-bottom: 12px;
+  }
+
+  .report-hero h1 {
+    font-family: var(--mono);
+    font-size: clamp(24px, 4vw, 40px);
+    font-weight: 700;
+    color: var(--arctic);
+    letter-spacing: -1px;
+    margin-bottom: 8px;
+  }
+
+  .report-hero .subtitle {
+    font-size: 14px;
+    color: var(--steel);
+    margin-bottom: 32px;
+  }
+
+  .verdict-box {
+    display: inline-block;
+    padding: 16px 32px;
+    border-radius: 8px;
+    margin-bottom: 32px;
+  }
+
+  .verdict-label {
+    font-size: 11px;
+    color: var(--steel);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+
+  .verdict-value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+
+  .summary-counts {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .count-crit { color: var(--threat-red); }
+  .count-high { color: var(--amber); }
+  .count-med { color: var(--steel); }
+  .count-low { color: #4b5563; }
+
+  /* -- Prose ----------------------------------------------- */
+  .prose {
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--bone);
+    max-width: 780px;
+  }
+
+  .prose p { margin-bottom: 16px; }
+
+  .prose strong { color: var(--arctic); }
+
+  .verdict-callout {
+    border-left: 3px solid var(--threat-red);
+    background: rgba(239, 68, 68, 0.06);
+    padding: 16px 20px;
+    border-radius: 0 6px 6px 0;
+    margin: 24px 0;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--threat-red);
+  }
+
+  .mitigations {
+    list-style: none;
+    padding: 0;
+  }
+  .mitigations li {
+    padding: 8px 0;
+    padding-left: 20px;
+    position: relative;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--bone);
+  }
+  .mitigations li::before {
+    content: '>';
+    position: absolute;
+    left: 0;
+    color: var(--violet);
+    font-weight: 700;
+  }
+
+  /* -- Findings Bar ---------------------------------------- */
+  .findings-bar-section {
+    margin-bottom: 60px;
+  }
+
+  .bar-track {
+    display: flex;
+    height: 36px;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    border: 1px solid var(--charcoal);
+  }
+
+  .bar-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--deep-black);
+    white-space: nowrap;
+    padding: 0 8px;
+    min-width: 40px;
+  }
+
+  .bar-label {
+    font-size: 12px;
+    color: var(--steel);
+    margin-bottom: 10px;
+  }
+
+  /* -- Table ----------------------------------------------- */
+  .findings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .findings-table thead th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--steel);
+    border-bottom: 1px solid var(--charcoal);
+    font-weight: 600;
+  }
+
+  .findings-table tbody td {
+    padding: 12px 12px;
+    border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+    vertical-align: top;
+  }
+
+  .findings-table tbody tr:hover {
+    background: rgba(167, 139, 250, 0.03);
+  }
+
+  .sev-crit {
+    color: var(--threat-red);
+    font-weight: 700;
+  }
+  .sev-high {
+    color: var(--amber);
+    font-weight: 700;
+  }
+  .sev-med {
+    color: var(--steel);
+    font-weight: 600;
+  }
+
+  .cve-tag {
+    font-size: 12px;
+    color: var(--steel);
+  }
+
+  .cvss-tag {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+
+  .cvss-crit { background: rgba(239, 68, 68, 0.15); color: var(--threat-red); }
+  .cvss-high { background: rgba(245, 158, 11, 0.15); color: var(--amber); }
+  .cvss-med  { background: rgba(107, 114, 128, 0.15); color: var(--steel); }
+
+  /* -- Details / Collapsible ------------------------------- */
+  details {
+    border: 1px solid var(--charcoal);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  details:hover {
+    border-color: #3a3a3a;
+  }
+
+  details[open] {
+    border-color: var(--charcoal);
+  }
+
+  summary {
+    padding: 16px 20px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--arctic);
+    background: var(--terminal-black);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    user-select: none;
+  }
+
+  summary::-webkit-details-marker { display: none; }
+
+  summary::before {
+    content: '+';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--violet);
+    border: 1px solid var(--charcoal);
+    border-radius: 4px;
+  }
+
+  details[open] > summary::before {
+    content: '-';
+  }
+
+  .details-body {
+    padding: 20px;
+    font-size: 13px;
+    line-height: 1.7;
+    background: var(--deep-black);
+  }
+
+  /* -- AI Finding Cards ------------------------------------ */
+  .ai-section {
+    border-left: 3px solid var(--violet);
+    padding-left: 0;
+  }
+
+  .ai-card {
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+
+  .ai-card:hover {
+    border-color: rgba(167, 139, 250, 0.3);
+  }
+
+  .ai-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .ai-card-title {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--arctic);
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .ai-card-sev {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 4px 12px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .ai-card-sev.crit {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--threat-red);
+  }
+
+  .ai-card-sev.high {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--amber);
+  }
+
+  .ai-card-sev.med {
+    background: rgba(107, 114, 128, 0.15);
+    color: var(--steel);
+  }
+
+  .ai-card-file {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--violet);
+    margin-bottom: 10px;
+    word-break: break-all;
+  }
+
+  .ai-card-desc {
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--bone);
+    line-height: 1.7;
+    margin-bottom: 12px;
+  }
+
+  .ai-card-meta {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--steel);
+  }
+
+  .confidence-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .confidence-fill {
+    width: 60px;
+    height: 4px;
+    background: var(--charcoal);
+    border-radius: 2px;
+    overflow: hidden;
+    display: inline-block;
+    position: relative;
+  }
+
+  .confidence-fill span {
+    display: block;
+    height: 100%;
+    background: var(--violet);
+    border-radius: 2px;
+  }
+
+  .analyst-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .analyst-tag {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--violet);
+    background: var(--violet-dim);
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.3px;
+  }
+
+  /* -- Upgrade Table --------------------------------------- */
+  .upgrade-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .upgrade-table thead th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--steel);
+    border-bottom: 1px solid var(--charcoal);
+    font-weight: 600;
+  }
+
+  .upgrade-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+    vertical-align: top;
+  }
+
+  .upgrade-table tbody tr:hover {
+    background: rgba(167, 139, 250, 0.03);
+  }
+
+  .pkg-name {
+    color: var(--arctic);
+    font-weight: 600;
+  }
+
+  .ver-old { color: var(--threat-red); }
+  .ver-new { color: var(--safe-green); }
+
+  /* -- Trust Signals --------------------------------------- */
+  .trust-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+  }
+
+  .trust-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--bone);
+  }
+
+  .trust-icon {
+    font-size: 16px;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+    color: var(--threat-red);
+  }
+
+  /* -- PR / Remediation ------------------------------------ */
+  .fix-card {
+    background: var(--terminal-black);
+    border: 1px solid var(--safe-green);
+    border-radius: 8px;
+    padding: 28px;
+  }
+
+  .fix-card h3 {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--safe-green);
+    margin-bottom: 12px;
+  }
+
+  .fix-card p {
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--bone);
+    line-height: 1.7;
+    margin-bottom: 16px;
+  }
+
+  .fix-list {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 6px;
+  }
+
+  .fix-list li {
+    font-size: 13px;
+    color: var(--bone);
+    padding: 4px 0 4px 18px;
+    position: relative;
+  }
+
+  .fix-list li::before {
+    content: '\2713';
+    position: absolute;
+    left: 0;
+    color: var(--safe-green);
+    font-weight: 700;
+  }
+
+  /* -- Pipeline -------------------------------------------- */
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+  }
+
+  .pipeline-item {
+    font-size: 12px;
+    padding: 8px 12px;
+    background: var(--terminal-black);
+    border: 1px solid var(--charcoal);
+    border-radius: 4px;
+    color: var(--bone);
+  }
+
+  .pipeline-item.ai {
+    border-color: rgba(167, 139, 250, 0.3);
+    color: var(--violet);
+  }
+
+  /* -- CTA Footer ------------------------------------------ */
+  .cta-section {
+    text-align: center;
+    padding: 80px 24px;
+    border-top: 1px solid var(--charcoal);
+    position: relative;
+  }
+
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 300px;
+    background: radial-gradient(ellipse, var(--violet-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-ascii {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.25;
+    color: var(--violet);
+    white-space: pre;
+    margin-bottom: 32px;
+    opacity: 0.5;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cta-section h2 {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--arctic);
+    margin-bottom: 32px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .install-box {
+    background: var(--terminal-black);
+    border: 1px solid var(--violet);
+    border-radius: 8px;
+    padding: 20px 40px;
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: box-shadow 0.3s, border-color 0.3s;
+    position: relative;
+    z-index: 1;
+  }
+
+  .install-box:hover {
+    box-shadow: 0 0 40px var(--violet-glow), 0 0 80px rgba(167, 139, 250, 0.05);
+  }
+
+  .install-box .prompt { color: var(--steel); user-select: none; }
+  .install-box .cmd {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--arctic);
+  }
+  .install-box .cmd .domain { color: var(--violet); }
+
+  .copy-tooltip {
+    position: absolute;
+    right: -80px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--violet);
+    color: var(--deep-black);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 5px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, transform 0.15s;
+    transform: translateY(-50%) translateX(4px);
+  }
+
+  .copy-tooltip::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: var(--violet);
+    border-left: 0;
+  }
+
+  .copy-tooltip.show {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+
+  footer {
+    border-top: 1px solid var(--charcoal);
+    padding: 40px 24px;
+    text-align: center;
+    color: var(--steel);
+    font-size: 12px;
+  }
+
+  footer a {
+    color: var(--arctic);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  footer a:hover { color: var(--violet); }
+
+  /* -- Scrollbar ------------------------------------------- */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--deep-black); }
+  ::-webkit-scrollbar-thumb { background: var(--charcoal); border-radius: 3px; }
+
+  /* -- Responsive ------------------------------------------ */
+  @media (max-width: 768px) {
+    .container { padding: 80px 16px 60px; }
+    .summary-counts { gap: 12px; }
+    .ai-card-header { flex-direction: column; }
+    .trust-items { grid-template-columns: 1fr; }
+    .fix-list { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+    .findings-table { font-size: 12px; }
+    .findings-table thead th,
+    .findings-table tbody td { padding: 8px 6px; }
+    .upgrade-table { font-size: 12px; }
+    .upgrade-table thead th,
+    .upgrade-table tbody td { padding: 8px 6px; }
+    .install-box { padding: 16px 20px; }
+    .install-box .cmd { font-size: 13px; }
+    .copy-tooltip {
+      right: auto;
+      left: 50%;
+      top: -36px;
+      transform: translateX(-50%);
+    }
+    .copy-tooltip::before {
+      left: 50%;
+      top: auto;
+      bottom: -5px;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--violet);
+      border-bottom: 0;
+    }
+    .copy-tooltip.show {
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .bar-segment { font-size: 9px; min-width: 30px; }
+    .pipeline-grid { grid-template-columns: 1fr; }
+  }
+
+  /* -- Table horizontal scroll ----------------------------- */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <a href="https://thresher.sh" class="nav-back">&larr; Back to thresher.sh</a>
+  <ul class="nav-links">
+    <li><a href="#executive-summary">Summary</a></li>
+    <li><a href="#scanner-findings">Scanners</a></li>
+    <li><a href="#ai-findings">AI Findings</a></li>
+    <li><a href="#upgrades">Upgrades</a></li>
+    {% if fix_metadata and fix_metadata.get("title") %}
+    <li><a href="#fixed">What Was Fixed</a></li>
+    {% endif %}
+    <li><a href="https://github.com/thresher-sh/thresher">GitHub</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+
+<!-- Hero -->
+<div class="report-hero">
+  <div class="meta">SCAN DATE: {{ scan_date }} &middot; THRESHER v{{ thresher_version }}</div>
+  <h1>{{ repo_url }}</h1>
+  <p class="subtitle">Security Scan Report</p>
+
+  {% if risk_assessment == "GO" %}
+  <div class="verdict-box" style="border: 2px solid var(--safe-green); background: rgba(34, 197, 94, 0.08);">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-value" style="color: var(--safe-green);">GO</div>
+  </div>
+  {% elif risk_assessment == "CAUTION" %}
+  <div class="verdict-box" style="border: 2px solid var(--amber); background: rgba(245, 158, 11, 0.08);">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-value" style="color: var(--amber);">CAUTION</div>
+  </div>
+  {% elif risk_assessment == "DO NOT USE" %}
+  <div class="verdict-box" style="border: 2px solid var(--threat-red); background: rgba(239, 68, 68, 0.08);">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-value" style="color: var(--threat-red);">DO NOT USE</div>
+  </div>
+  {% endif %}
+
+  <div style="margin-top: 24px;">
+    <div class="summary-counts">
+      {% if priority_counts.get("P0", 0) > 0 %}
+      <span class="count-crit">{{ priority_counts["P0"] }} P0</span>
+      {% endif %}
+      {% if priority_counts.get("critical", 0) > 0 %}
+      <span class="count-crit">{{ priority_counts["critical"] }} Critical</span>
+      {% endif %}
+      {% if priority_counts.get("high", 0) > 0 %}
+      <span class="count-high">{{ priority_counts["high"] }} High</span>
+      {% endif %}
+      {% if priority_counts.get("medium", 0) > 0 %}
+      <span class="count-med">{{ priority_counts["medium"] }} Medium</span>
+      {% endif %}
+      {% if priority_counts.get("low", 0) > 0 %}
+      <span class="count-low">{{ priority_counts["low"] }} Low</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Executive Summary -->
+<div class="section" id="executive-summary">
+  <div class="section-title">// Executive Summary</div>
+  {% if agent_executive_summary %}
+  <div class="prose">
+    {{ agent_executive_summary }}
+  </div>
+  {% else %}
+  <div class="prose">
+    {% if risk_assessment == "GO" %}
+    <p>Automated security scanning of this repository produced <strong>{{ total_findings }} findings</strong>. No critical or high-severity issues were detected. The repository is considered safe for use with standard monitoring.</p>
+    {% elif risk_assessment == "CAUTION" %}
+    <p>Automated security scanning of this repository produced <strong>{{ total_findings }} findings</strong>, including high-severity issues that should be addressed before production deployment. Review the findings below and apply recommended mitigations.</p>
+    {% elif risk_assessment == "DO NOT USE" %}
+    <p>Automated security scanning of this repository produced <strong>{{ total_findings }} findings</strong>, including critical-severity issues that must be resolved before any use. This repository should not be used in its current state.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if agent_synthesis %}
+  <div style="margin-top: 32px;">
+    <div class="section-title" style="margin-bottom: 12px;">Synthesis Analysis</div>
+    <div class="prose">
+      {{ agent_synthesis }}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if findings_by_priority %}
+  {% set critical_findings = findings_by_priority.get("P0", []) + findings_by_priority.get("critical", []) + findings_by_priority.get("high", []) %}
+  {% if critical_findings %}
+  <div style="margin-top: 24px;">
+    <div class="section-title" style="margin-bottom: 12px;">Required Mitigations</div>
+    <ul class="mitigations">
+      {% for finding in critical_findings[:10] %}
+      <li>{{ finding.get("title", "Unknown finding") }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<!-- Findings Distribution Bar -->
+<div class="findings-bar-section">
+  <div class="section-title">// Findings Distribution</div>
+
+  {% set scanner_total = scanner_finding_counts.values()|sum if scanner_finding_counts else 0 %}
+  <div class="bar-label">{{ scanner_total }} scanner findings</div>
+  <div class="bar-track">
+    {% for p in priority_order %}
+    {% set count = scanner_finding_counts.get(p, 0) %}
+    {% if p == "P0" %}
+    <div class="bar-segment" style="flex: {{ count if count > 0 else 0 }}; min-width: 48px; background: var(--charcoal); color: var(--steel);">P0: {{ count }}</div>
+    {% elif p == "critical" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--threat-red);">CRIT: {{ count }}</div>
+    {% elif p == "high" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--amber);">HIGH: {{ count }}</div>
+    {% elif p == "medium" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--steel); color: var(--deep-black);">MED: {{ count }}</div>
+    {% elif p == "low" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--charcoal); color: var(--steel);">LOW: {{ count }}</div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  {% if not skip_ai and ai_finding_counts %}
+  {% set ai_total = ai_finding_counts.values()|sum %}
+  <div class="bar-label" style="margin-top: 16px;">{{ ai_total }} AI analyst findings</div>
+  <div class="bar-track" style="border-color: rgba(167, 139, 250, 0.3);">
+    {% for p in priority_order %}
+    {% set count = ai_finding_counts.get(p, 0) %}
+    {% if count > 0 %}
+    {% if p == "P0" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--charcoal); color: var(--steel);">P0: {{ count }}</div>
+    {% elif p == "critical" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--threat-red);">CRIT: {{ count }}</div>
+    {% elif p == "high" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--amber);">HIGH: {{ count }}</div>
+    {% elif p == "medium" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--steel); color: var(--deep-black);">MED: {{ count }}</div>
+    {% elif p == "low" %}
+    <div class="bar-segment" style="flex: {{ count }}; background: var(--charcoal); color: var(--steel);">LOW: {{ count }}</div>
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Scanner Findings: Top 10 -->
+<div class="section" id="scanner-findings">
+  <div class="section-title">// Scanner Findings</div>
+  <h2>Top 10 by severity</h2>
+
+  <div class="table-wrap">
+    <table class="findings-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Severity</th>
+          <th>Title</th>
+          <th>CVE</th>
+          <th>CVSS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for finding in top_findings %}
+        {% set sev = finding.get("composite_priority", "low") %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="{% if sev in ('P0', 'critical') %}sev-crit{% elif sev == 'high' %}sev-high{% else %}sev-med{% endif %}">{{ sev|capitalize }}</td>
+          <td>{{ finding.get("title", "Unknown") }}</td>
+          <td class="cve-tag">{{ finding.get("cve_id", "") }}{% if finding.get("cve_ids") %}{{ finding.get("cve_ids", [])|join(", ") }}{% endif %}</td>
+          <td>
+            {% set cvss = finding.get("cvss_score") %}
+            {% if cvss %}
+            <span class="cvss-tag {% if cvss >= 9.0 %}cvss-crit{% elif cvss >= 7.0 %}cvss-high{% else %}cvss-med{% endif %}">{{ cvss }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if not skip_ai and ai_findings_grouped %}
+{% set has_ai_findings = [] %}
+{% for priority in priority_order %}
+{% if ai_findings_grouped.get(priority, []) %}
+{% if has_ai_findings.append(1) %}{% endif %}
+{% endif %}
+{% endfor %}
+{% if has_ai_findings %}
+<div class="section" id="ai-findings">
+  <div class="section-title" style="color: var(--violet);">// What scanners missed</div>
+  <h2 style="margin-bottom: 8px;">AI Analyst Findings</h2>
+
+  {% for priority in priority_order %}
+  {% set findings_list = ai_findings_grouped.get(priority, []) %}
+  {% if findings_list %}
+
+  {% if priority in ("P0", "critical", "high") %}
+  <!-- {{ priority|capitalize }} — full cards -->
+  <div style="margin-bottom: 32px;">
+    {% if priority in ("P0", "critical") %}
+    <div style="font-size: 12px; font-weight: 700; color: var(--threat-red); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px; padding-left: 4px;">{{ priority|capitalize }}</div>
+    {% else %}
+    <div style="font-size: 12px; font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px; padding-left: 4px;">{{ priority|capitalize }}</div>
+    {% endif %}
+
+    {% for finding in findings_list %}
+    <div class="ai-card" style="border-left: 3px solid {% if priority in ('P0', 'critical') %}var(--threat-red){% else %}var(--amber){% endif %};">
+      <div class="ai-card-header">
+        <div class="ai-card-title">{{ finding.get("title", "Unknown") }}</div>
+        <span class="ai-card-sev {% if priority in ('P0', 'critical') %}crit{% elif priority == 'high' %}high{% else %}med{% endif %}">{{ priority|capitalize }}</span>
+      </div>
+      {% if finding.get("file_path") %}
+      <div class="ai-card-file">{{ finding.get("file_path", "") }}</div>
+      {% endif %}
+      {% if finding.get("description") %}
+      <div class="ai-card-desc">{{ finding.get("description", "") }}</div>
+      {% endif %}
+      <div class="ai-card-meta">
+        {% if finding.get("ai_confidence") %}
+        <div class="confidence-bar">
+          Confidence: {{ finding.get("ai_confidence") }}%
+          <div class="confidence-fill"><span style="width: {{ finding.get("ai_confidence") }}%;"></span></div>
+        </div>
+        {% endif %}
+        {% if finding.get("analyst_tags") %}
+        <div class="analyst-tags">
+          {% for tag in finding.get("analyst_tags", []) %}
+          <span class="analyst-tag">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <!-- {{ priority|capitalize }} — collapsible -->
+  <details>
+    <summary>
+      <span class="sev-med">{{ priority|capitalize }}</span> &mdash; {{ findings_list|length }} findings
+    </summary>
+    <div class="details-body">
+      {% for finding in findings_list %}
+      <div class="ai-card" style="border-left: 3px solid var(--steel); margin-bottom: 12px;">
+        <div class="ai-card-title" style="font-size: 14px; margin-bottom: 6px;">{{ finding.get("title", "Unknown") }}</div>
+        {% if finding.get("file_path") %}
+        <div class="ai-card-file">{{ finding.get("file_path", "") }}</div>
+        {% endif %}
+        <div class="ai-card-meta">
+          {% if finding.get("ai_confidence") %}
+          <span>Confidence: {{ finding.get("ai_confidence") }}%</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+{% if trust_signals %}
+<div class="section" id="trust">
+  <div class="section-title">// Infrastructure &amp; Trust</div>
+  <h2>Trust Assessment</h2>
+  <div class="trust-items">
+    {% for signal in trust_signals %}
+    <div class="trust-item">
+      <div class="trust-icon">{{ signal.get("icon", "!") }}</div>
+      <div>{{ signal.get("label", "") }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if upgrade_packages %}
+<div class="section" id="upgrades">
+  <div class="section-title">// Dependency Upgrades</div>
+  <h2>Recommended Upgrades</h2>
+  <div class="table-wrap">
+    <table class="upgrade-table">
+      <thead>
+        <tr>
+          <th>Package</th>
+          <th>Current</th>
+          <th>Fixed</th>
+          <th>Severity</th>
+          <th>CVEs</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pkg in upgrade_packages %}
+        <tr>
+          <td class="pkg-name">{{ pkg.get("package_name", "") }}</td>
+          <td class="ver-old">{{ pkg.get("package_version", "") }}</td>
+          <td class="ver-new">{{ pkg.get("fix_version", "") }}</td>
+          <td class="{% if pkg.get('composite_priority') in ('P0', 'critical') %}sev-crit{% elif pkg.get('composite_priority') == 'high' %}sev-high{% else %}sev-med{% endif %}">{{ pkg.get("composite_priority", "low")|capitalize }}</td>
+          <td class="cve-tag">{{ pkg.get("cve_ids", [])|join(", ") }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if fix_metadata and fix_metadata.get("title") %}
+<div class="section" id="fixed">
+  <div class="section-title">// What Was Fixed</div>
+  <h2>Remediation</h2>
+  <div class="fix-card">
+    <h3>{{ fix_metadata.get("title", "Remediation PR") }}</h3>
+    {% if fix_metadata.get("description") %}
+    <p>{{ fix_metadata.get("description", "") }}</p>
+    {% endif %}
+    {% if fix_metadata.get("fixes") %}
+    <ul class="fix-list">
+      {% for fix in fix_metadata.get("fixes", []) %}
+      <li>{{ fix }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Pipeline Details -->
+<details id="pipeline">
+  <summary>Pipeline Details</summary>
+  <div class="details-body">
+    <div class="section-title" style="margin-bottom: 12px;">// Scanners</div>
+    <div class="pipeline-grid">
+      {% for tool_name, tool_info in tools.items() %}
+      <div class="pipeline-item">{{ tool_name }}</div>
+      {% endfor %}
+    </div>
+
+    {% if not skip_ai %}
+    <div class="section-title" style="margin-top: 24px; margin-bottom: 12px;">// AI Personas</div>
+    <div class="pipeline-grid">
+      <div class="pipeline-item ai">Pre-dep Discovery Agent</div>
+      <div class="pipeline-item ai">Independent Analyst Agent</div>
+      <div class="pipeline-item ai">Adversarial Verification Agent</div>
+    </div>
+    {% endif %}
+  </div>
+</details>
+
+</div><!-- end container -->
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="cta-ascii">                     _/|
+              ______/  |
+        _____/  __     |
+    ___/   \__/  \    /
+   /    _     \__/
+  | __-~ \--~
+   \/</div>
+
+  <h2>Run this on your own dependencies.</h2>
+
+  <div class="install-box" onclick="copyCmd(this)" style="margin: 0 auto;">
+    <span class="prompt">$</span>
+    <span class="cmd">brew tap thresher-sh/thresher && brew install <span class="domain">thresher</span></span>
+    <span class="copy-tooltip">copied!</span>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p style="margin-bottom: 16px;">
+    <a href="https://github.com/thresher-sh/thresher">GitHub</a> &middot;
+    <a href="https://github.com/thresher-sh/thresher/tree/main/documentation">Docs</a> &middot;
+    <a href="https://discord.gg/VVt9qmkcnr">Discord</a> &middot;
+    <a href="https://thresher.sh">thresher.sh</a>
+  </p>
+  <p style="max-width: 680px; margin: 0 auto; color: var(--steel); font-size: 11px; line-height: 1.6;">
+    <strong>Disclaimer:</strong> Thresher is provided &ldquo;as is&rdquo; without warranty of any kind. It does not guarantee detection of all vulnerabilities, malicious code, or supply chain threats. Results should not be treated as a substitute for professional security audits. Use at your own risk.
+  </p>
+</footer>
+
+<script>
+function copyCmd(el) {
+  var cmd = 'brew tap thresher-sh/thresher && brew install thresher';
+  navigator.clipboard.writeText(cmd).then(function() {
+    var tip = el.querySelector('.copy-tooltip');
+    if (!tip) return;
+    tip.classList.add('show');
+    setTimeout(function() { tip.classList.remove('show'); }, 1500);
+  });
+}
+</script>
+
+</body>
+</html>
