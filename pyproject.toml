@@ -12,7 +12,7 @@ dependencies = [
     "click>=8.1",
     "jinja2>=3.1",
     "jsonschema>=4.0",
-    "markdown>=3.5",
+    "markdown>=3.10.2",
     "pyyaml>=6.0",
     "sf-hamilton>=1.82",
 ]
