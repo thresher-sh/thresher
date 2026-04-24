@@ -23,14 +23,16 @@ v3 Todos
 [ ] Do release
 
 Deferred to v4
+[ ] Move from docker to podman.
 [ ] Give agents proper tools edit/write/webfetch/websearch.
+[ ] Add in smaller agent harness, test with other LLMS like kimi 2.5 turbo with pi.dev
 [ ] run without --skip-ai and validate outputs
-[ ] move from hamilton to langgraph or airflow or something that is more explicit nodes and edges.
+[ ] move from hamilton to langgraph for better orchestration...
 [ ] update pipeline to be more explicit (Lots of parallel calls hidden behind run_all commands vs pipeline orchestration of the dag for hamilton)
 [ ] agents use MCP instead of stop hook validation
 [ ] each pipeline item once finishes writes results to disk, no waiting. (Useful for checkpointing)
 [ ] start from pipeline stage xyz from exisitng report run (rapid debugging, pick up from failures)
-[ ] add additional ecosystems to dependency resolution
+[ ] Build thresher-dependencies package in separate git repo, bring into this one. Full dependency resolution package.
 [ ] Review tool configs and semgrep rules
 [ ] TUI, drop tmux
 [ ] Headless mode (after TUI added in)
