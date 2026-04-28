@@ -1,18 +1,23 @@
-"""Shared driver for running Claude Code agents in headless mode.
+"""Shared driver for running coding-agent CLIs in headless mode.
 
 Each Thresher agent (predep, analyst, adversarial, report-maker,
 synthesize) follows the same recipe:
 
 1. Write the prompt and (optional) stop-hook settings to tempfiles.
-2. Build a ``claude -p ... --model ... --allowedTools ... --output-format
-   stream-json --max-turns ...`` command.
+2. Build a CLI command that speaks Claude Code's stream-json shape.
 3. Merge ``config.ai_env()`` plus any agent-specific env vars into the
    subprocess environment.
-4. Run the subprocess via ``thresher.run.run`` and decode the stream-JSON.
+4. Run the subprocess via ``thresher.run.run`` and decode the stream.
 5. Pull the final result text and ``num_turns`` out of the stream.
 
-This module owns that recipe so the per-agent files only have to declare
-*what* they want, not *how* to launch a Claude Code subprocess.
+Two runtimes are supported, selected by ``ScanConfig.agent_runtime``:
+
+- ``"claude"`` (default) — the Anthropic Claude Code CLI.
+- ``"wksp"`` — the Workshop CLI (https://workshop.ai) which emits the
+  same stream-json shape via ``--output-format claude-stream-json``.
+
+The wksp branch exists so installations without a Claude Code binary
+(or with a wksp-only LLM proxy token) can still run Thresher unmodified.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +38,41 @@ from thresher.run import run as run_cmd
 logger = logging.getLogger(__name__)
 
 _SHARED_HOOK = Path(__file__).parent / "hooks" / "_common" / "validate_json_output.sh"
+
+
+# Claude Code tool names → wksp-accepted aliases. wksp's own
+# ``normalize_tool_names`` then expands ``read``/``grep``/``bash``/etc.
+# into backend tool IDs (``read_file``/``grep_search``/``terminal_run``...).
+# wksp has no native ``Glob`` tool; we route it through ``bash`` so the
+# agent can shell out to ``find``.
+_CLAUDE_TO_WKSP_TOOL: dict[str, str] = {
+    "Read": "read",
+    "Edit": "edit",
+    "Write": "edit",
+    "MultiEdit": "edit",
+    "NotebookEdit": "edit",
+    "Grep": "grep",
+    "Glob": "bash",
+    "Bash": "bash",
+    "BashOutput": "bash",
+    "KillShell": "bash",
+    "WebFetch": "webfetch",
+    "WebSearch": "webfetch",
+    "Task": "task",
+    "Skill": "skill",
+}
+
+
+def _translate_tools(claude_tools: list[str]) -> list[str]:
+    """Map Claude Code tool names to wksp-accepted aliases (deduped)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for tool in claude_tools:
+        mapped = _CLAUDE_TO_WKSP_TOOL.get(tool, tool)
+        if mapped not in seen:
+            seen.add(mapped)
+            out.append(mapped)
+    return out
 
 
 def build_stop_hook_settings(schema_name: str) -> str:
@@ -64,7 +105,7 @@ def build_stop_hook_settings(schema_name: str) -> str:
 
 @dataclass
 class AgentSpec:
-    """Declarative description of a Claude Code agent invocation."""
+    """Declarative description of a coding-agent invocation."""
 
     label: str
     prompt: str
@@ -89,8 +130,109 @@ class AgentResult:
     model_usage_by_model: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
+def _resolve_wksp_project_dir(spec: AgentSpec, stack: ExitStack) -> str:
+    """Pick a ``--project-dir`` for the wksp subprocess.
+
+    If ``spec.cwd`` is set and is a writable directory, return it — that
+    matches Claude Code's cwd semantics and lets the agent resolve the
+    relative paths its prompt uses (``executive-summary.md``, etc).
+
+    Otherwise allocate a fresh TemporaryDirectory (the agent is expected
+    to use absolute paths — this directory just holds ``memex.log``).
+    """
+    if spec.cwd:
+        cwd_path = Path(spec.cwd)
+        if cwd_path.is_dir() and os.access(cwd_path, os.W_OK):
+            return str(cwd_path)
+    return stack.enter_context(
+        tempfile.TemporaryDirectory(suffix=f"_{spec.label}_proj"),
+    )
+
+
+def _build_claude_cmd(
+    spec: AgentSpec,
+    config: ScanConfig,
+    stack: ExitStack,
+) -> list[str]:
+    """Build argv for the Claude Code CLI. Prompt goes into a tempfile."""
+    prompt_path = stack.enter_context(
+        tempfile_with(spec.prompt, suffix=f"_{spec.label}_prompt.txt"),
+    )
+    cmd: list[str] = [
+        "claude",
+        "-p",
+        str(prompt_path),
+        "--model",
+        config.model,
+        "--allowedTools",
+        ",".join(spec.allowed_tools),
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--max-turns",
+        str(spec.max_turns),
+    ]
+    if spec.hooks_settings_json is not None:
+        settings_path = stack.enter_context(
+            tempfile_with(
+                spec.hooks_settings_json,
+                suffix=f"_{spec.label}_hooks.json",
+            ),
+        )
+        cmd.extend(["--settings", str(settings_path)])
+    return cmd
+
+
+def _build_wksp_cmd(
+    spec: AgentSpec,
+    config: ScanConfig,
+    stack: ExitStack,
+) -> list[str]:
+    """Build argv for the wksp CLI.
+
+    wksp's ``-p`` takes an inline prompt string (not a path), so the
+    prompt goes directly into argv. wksp's file tools (Read/Grep/Glob)
+    resolve *relative* paths against ``--project-dir`` — unlike Claude
+    Code, which resolves them against subprocess ``cwd``.
+
+    To preserve Claude's cwd semantics for agents whose prompts say
+    "files are in your cwd" (report_maker, synthesize), we point
+    ``--project-dir`` at ``spec.cwd`` when it's a writable directory.
+    For read-only cwds (analysts/predep/adversarial scanning
+    ``/opt/source``) we fall back to a writable tempdir; those agents
+    already use absolute paths in their prompts, so the project-dir is
+    only needed for wksp's ``memex.log``. Tool names are translated to
+    wksp's namespace.
+    """
+    project_dir = _resolve_wksp_project_dir(spec, stack)
+    cmd: list[str] = [
+        "wksp",
+        "--project-dir",
+        project_dir,
+        "-p",
+        spec.prompt,
+        "--model",
+        config.model,
+        "--allowed-tools",
+        ",".join(_translate_tools(spec.allowed_tools)),
+        "--output-format",
+        "claude-stream-json",
+        "--max-turns",
+        str(spec.max_turns),
+    ]
+    if spec.hooks_settings_json is not None:
+        settings_path = stack.enter_context(
+            tempfile_with(
+                spec.hooks_settings_json,
+                suffix=f"_{spec.label}_hooks.json",
+            ),
+        )
+        cmd.extend(["--settings", str(settings_path)])
+    return cmd
+
+
 def run_agent(spec: AgentSpec, config: ScanConfig) -> AgentResult:
-    """Launch a Claude Code agent and return its parsed result.
+    """Launch a coding-agent CLI and return its parsed result.
 
     Wraps prompt + settings tempfile management, command assembly, env
     merging, subprocess invocation, and stream-JSON extraction. Any
@@ -104,31 +246,10 @@ def run_agent(spec: AgentSpec, config: ScanConfig) -> AgentResult:
 
     try:
         with ExitStack() as stack:
-            prompt_path = stack.enter_context(
-                tempfile_with(spec.prompt, suffix=f"_{spec.label}_prompt.txt"),
-            )
-            cmd: list[str] = [
-                "claude",
-                "-p",
-                str(prompt_path),
-                "--model",
-                config.model,
-                "--allowedTools",
-                ",".join(spec.allowed_tools),
-                "--output-format",
-                "stream-json",
-                "--verbose",
-                "--max-turns",
-                str(spec.max_turns),
-            ]
-            if spec.hooks_settings_json is not None:
-                settings_path = stack.enter_context(
-                    tempfile_with(
-                        spec.hooks_settings_json,
-                        suffix=f"_{spec.label}_hooks.json",
-                    ),
-                )
-                cmd.extend(["--settings", str(settings_path)])
+            if config.agent_runtime == "wksp":
+                cmd = _build_wksp_cmd(spec, config, stack)
+            else:
+                cmd = _build_claude_cmd(spec, config, stack)
 
             proc = run_cmd(
                 cmd,

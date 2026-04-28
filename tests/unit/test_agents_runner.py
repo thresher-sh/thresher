@@ -5,15 +5,21 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from thresher.agents._runner import AgentResult, AgentSpec, run_agent
+from thresher.agents._runner import (
+    AgentResult,
+    AgentSpec,
+    _translate_tools,
+    run_agent,
+)
 from thresher.config import ScanConfig
 
 
-def _make_config() -> ScanConfig:
+def _make_config(agent_runtime: str = "claude") -> ScanConfig:
     return ScanConfig(
         repo_url="https://github.com/x/y",
         anthropic_api_key="sk-ant-test-key",
         model="sonnet",
+        agent_runtime=agent_runtime,
     )
 
 
@@ -141,3 +147,116 @@ class TestRunAgent:
         result = run_agent(self._spec(), _make_config())
         assert result.result_text == ""
         assert result.num_turns == 0
+
+
+class TestWkspRuntime:
+    def _spec(self, **overrides):
+        defaults = dict(
+            label="test-agent",
+            prompt="say hi",
+            allowed_tools=["Read", "Grep", "Glob"],
+            max_turns=10,
+            timeout=60,
+            cwd="/tmp",
+        )
+        defaults.update(overrides)
+        return AgentSpec(**defaults)
+
+    @patch("thresher.run._popen")
+    def test_invokes_wksp_binary(self, mock):
+        mock.return_value = _mock_popen(stdout=_stream_json())
+        run_agent(self._spec(), _make_config(agent_runtime="wksp"))
+        cmd = mock.call_args[0][0]
+        assert cmd[0] == "wksp"
+
+    @patch("thresher.run._popen")
+    def test_prompt_passed_inline_not_as_path(self, mock):
+        mock.return_value = _mock_popen(stdout=_stream_json())
+        run_agent(
+            self._spec(prompt="hello world"),
+            _make_config(agent_runtime="wksp"),
+        )
+        cmd = mock.call_args[0][0]
+        # wksp's -p takes the prompt string directly, not a tempfile path.
+        assert cmd[cmd.index("-p") + 1] == "hello world"
+
+    @patch("thresher.run._popen")
+    def test_uses_claude_stream_json_output_format(self, mock):
+        mock.return_value = _mock_popen(stdout=_stream_json())
+        run_agent(self._spec(), _make_config(agent_runtime="wksp"))
+        cmd = mock.call_args[0][0]
+        assert cmd[cmd.index("--output-format") + 1] == "claude-stream-json"
+        # wksp uses --allowed-tools (kebab-case), not --allowedTools.
+        assert "--allowed-tools" in cmd
+        assert "--allowedTools" not in cmd
+        # wksp has no --verbose flag.
+        assert "--verbose" not in cmd
+
+    @patch("thresher.run._popen")
+    def test_translates_tool_names(self, mock):
+        mock.return_value = _mock_popen(stdout=_stream_json())
+        run_agent(
+            self._spec(allowed_tools=["Read", "Grep", "Glob", "Bash"]),
+            _make_config(agent_runtime="wksp"),
+        )
+        cmd = mock.call_args[0][0]
+        tools = cmd[cmd.index("--allowed-tools") + 1]
+        # Glob → bash collides with Bash → bash; must be deduped.
+        assert tools == "read,grep,bash"
+
+    @patch("thresher.run._popen")
+    def test_project_dir_is_writable_temp(self, mock):
+        mock.return_value = _mock_popen(stdout=_stream_json())
+        # spec.cwd="/tmp" is writable, so project-dir becomes /tmp itself
+        # (matching Claude's cwd semantics for relative-path reads).
+        run_agent(self._spec(cwd="/tmp"), _make_config(agent_runtime="wksp"))
+        cmd = mock.call_args[0][0]
+        project_dir = cmd[cmd.index("--project-dir") + 1]
+        assert project_dir == "/tmp"
+
+    @patch("thresher.run._popen")
+    def test_project_dir_falls_back_to_tempdir_when_cwd_not_writable(
+        self, mock, tmp_path
+    ):
+        mock.return_value = _mock_popen(stdout=_stream_json())
+        ro_dir = tmp_path / "readonly"
+        ro_dir.mkdir()
+        ro_dir.chmod(0o555)
+        try:
+            run_agent(
+                self._spec(cwd=str(ro_dir)),
+                _make_config(agent_runtime="wksp"),
+            )
+        finally:
+            ro_dir.chmod(0o755)
+        cmd = mock.call_args[0][0]
+        project_dir = cmd[cmd.index("--project-dir") + 1]
+        # Fresh tempdir, not the read-only cwd.
+        assert project_dir != str(ro_dir)
+        assert project_dir.endswith("_test-agent_proj")
+
+    @patch("thresher.run._popen")
+    def test_project_dir_falls_back_to_tempdir_when_cwd_missing(self, mock):
+        mock.return_value = _mock_popen(stdout=_stream_json())
+        run_agent(self._spec(cwd=None), _make_config(agent_runtime="wksp"))
+        cmd = mock.call_args[0][0]
+        project_dir = cmd[cmd.index("--project-dir") + 1]
+        assert project_dir.endswith("_test-agent_proj")
+
+
+def test_translate_tools_maps_claude_to_wksp():
+    assert _translate_tools(["Read", "Grep", "Edit"]) == ["read", "grep", "edit"]
+
+
+def test_translate_tools_routes_glob_through_bash():
+    # wksp has no native Glob; the agent shells out to `find` instead.
+    assert _translate_tools(["Glob"]) == ["bash"]
+
+
+def test_translate_tools_dedupes_collisions():
+    # Glob → bash and Bash → bash collide; both mappings produce one entry.
+    assert _translate_tools(["Glob", "Bash"]) == ["bash"]
+
+
+def test_translate_tools_passthrough_unknown_names():
+    assert _translate_tools(["CustomTool"]) == ["CustomTool"]
