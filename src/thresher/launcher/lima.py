@@ -1,15 +1,25 @@
 """Lima+Docker launch mode — maximum isolation."""
 
+import hashlib
 import logging
+import os
 import subprocess
 from pathlib import Path
 
+from thresher.agents.runtime import HostFileMount, runtime_host_mounts
 from thresher.config import ScanConfig
 from thresher.fs import tempfile_with
 from thresher.launcher._container import build_docker_args
 
 logger = logging.getLogger(__name__)
 BASE_VM_NAME = "thresher-base"
+
+
+def _vm_staging_path(mount: HostFileMount) -> str:
+    """Per-mount staging path inside the VM. The hash keeps separate
+    runtimes from clobbering each other's files in /opt."""
+    digest = hashlib.sha1(mount.container_path.encode()).hexdigest()[:12]
+    return f"/opt/runtime-{digest}-{mount.host_path.name}"
 
 
 def launch_lima(config: ScanConfig) -> int:
@@ -21,6 +31,7 @@ def launch_lima(config: ScanConfig) -> int:
     config_for_container = config
     if config.local_path:
         import copy
+
         config_for_container = copy.copy(config)
         config_for_container.local_path = "/opt/source"
 
@@ -34,6 +45,18 @@ def launch_lima(config: ScanConfig) -> int:
                 ["limactl", "copy", "-r", config.local_path, f"{BASE_VM_NAME}:/opt/source"],
                 check=True,
             )
+        # Stage runtime credentials inside the VM so docker can mount them
+        # into the harness container. Missing host files are skipped.
+        for mount in runtime_host_mounts(config.agent_runtime):
+            if mount.host_path.exists():
+                subprocess.run(
+                    ["limactl", "copy", str(mount.host_path), f"{BASE_VM_NAME}:{_vm_staging_path(mount)}"],
+                    check=True,
+                )
+        subprocess.run(
+            ["limactl", "shell", BASE_VM_NAME, "--", "sudo", "chmod", "-R", "a+rX", "/opt"],
+            check=True,
+        )
         docker_cmd = _build_lima_docker_cmd(config)
         result = subprocess.run(["limactl", "shell", BASE_VM_NAME, "--", *docker_cmd])
         if result.returncode == 0:
@@ -72,18 +95,33 @@ def _build_lima_docker_cmd(config: ScanConfig) -> list[str]:
     if config.local_path:
         source_mount = "/opt/source:/opt/source:ro"
 
+    extra_flags = _build_credential_env_flags()
+    for mount in runtime_host_mounts(config.agent_runtime):
+        if not mount.host_path.exists():
+            continue
+        # Inside the VM, docker mounts the staged copy — not the host path.
+        extra_flags += ["-v", f"{_vm_staging_path(mount)}:{mount.container_path}:ro"]
+
     return build_docker_args(
         output_mount="/opt/reports:/output",
         config_mount="/opt/config.json:/config/config.json:ro",
-        # Forward host env vars by name through limactl shell.
-        env_flags=[
-            "-e",
-            "ANTHROPIC_API_KEY",
-            "-e",
-            "CLAUDE_CODE_OAUTH_TOKEN",
-        ],
+        # Forward host env vars by VALUE. `limactl shell --` runs a
+        # non-login, non-interactive shell that does NOT source
+        # /etc/environment or /etc/profile, so by-name forwarding
+        # (`-e KEY`) gets empty strings inside the VM. Pass values
+        # explicitly so docker sees them.
+        env_flags=extra_flags,
         source_mount=source_mount,
     )
+
+
+def _build_credential_env_flags() -> list[str]:
+    flags: list[str] = []
+    for key in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
+        value = os.environ.get(key)
+        if value:
+            flags += ["-e", f"{key}={value}"]
+    return flags
 
 
 def _copy_report_to_host(output_dir: str) -> None:

@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from thresher.agents.runtime import runtime_host_mounts
 from thresher.config import ScanConfig
 from thresher.fs import tempfile_with
 from thresher.launcher._container import build_docker_args
@@ -22,6 +23,7 @@ def launch_docker(config: ScanConfig) -> int:
     config_for_container = config
     if config.local_path:
         import copy
+
         config_for_container = copy.copy(config)
         config_for_container.local_path = "/opt/source"
 
@@ -57,11 +59,19 @@ def _resolve_log_file(config: ScanConfig) -> str | None:
 
 def _build_docker_cmd(config: ScanConfig, config_path: str, output_dir: str) -> list[str]:
     env_flags: list[str] = []
+    extra_mounts: list[str] = []
     # Pass credentials explicitly — they may come from Keychain, not env vars
     if config.anthropic_api_key:
         env_flags += ["-e", f"ANTHROPIC_API_KEY={config.anthropic_api_key}"]
     elif config.oauth_token:
         env_flags += ["-e", f"CLAUDE_CODE_OAUTH_TOKEN={config.oauth_token}"]
+
+    # Forward host files the configured agent runtime needs (e.g. wksp's
+    # ~/.config/workshop/credentials.json). Missing files are skipped so
+    # the runtime can fall back to env-based credentials.
+    for mount in runtime_host_mounts(config.agent_runtime):
+        if mount.host_path.exists():
+            extra_mounts += ["-v", f"{mount.host_path}:{mount.container_path}:ro"]
 
     source_mount = None
     if config.local_path:
@@ -70,6 +80,6 @@ def _build_docker_cmd(config: ScanConfig, config_path: str, output_dir: str) -> 
     return build_docker_args(
         output_mount=f"{output_dir}:/output",
         config_mount=f"{config_path}:/config/config.json:ro",
-        env_flags=env_flags,
+        env_flags=env_flags + extra_mounts,
         source_mount=source_mount,
     )

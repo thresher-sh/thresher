@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -151,6 +152,47 @@ class TestBuildDockerCmd:
         idx = cmd.index("--output")
         assert cmd[idx + 1] == "/output"
 
+    def test_wksp_runtime_mounts_credentials(self, tmp_path, monkeypatch):
+        fake_home = tmp_path / "home"
+        creds = fake_home / ".config" / "workshop" / "credentials.json"
+        creds.parent.mkdir(parents=True)
+        creds.write_text("{}")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        config = ScanConfig(
+            repo_url="https://github.com/example/pkg",
+            output_dir="/tmp/test-output",
+            skip_ai=True,
+            agent_runtime="wksp",
+        )
+        cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)
+        v_indices = [i for i, v in enumerate(cmd) if v == "-v"]
+        vol_args = [cmd[i + 1] for i in v_indices]
+        assert any(v == f"{creds}:/home/thresher/.config/workshop/credentials.json:ro" for v in vol_args)
+
+    def test_wksp_runtime_skips_mount_when_creds_missing(self, tmp_path, monkeypatch):
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        config = ScanConfig(
+            repo_url="https://github.com/example/pkg",
+            output_dir="/tmp/test-output",
+            skip_ai=True,
+            agent_runtime="wksp",
+        )
+        cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)
+        v_indices = [i for i, v in enumerate(cmd) if v == "-v"]
+        vol_args = [cmd[i + 1] for i in v_indices]
+        assert not any("workshop/credentials.json" in v for v in vol_args)
+
+    def test_claude_runtime_omits_wksp_mount(self):
+        config = _make_config()
+        cmd = _build_docker_cmd(config, "/tmp/config.json", config.output_dir)
+        v_indices = [i for i, v in enumerate(cmd) if v == "-v"]
+        vol_args = [cmd[i + 1] for i in v_indices]
+        assert not any("workshop/credentials.json" in v for v in vol_args)
+
 
 class TestLocalPathMount:
     def test_docker_cmd_mounts_local_path(self, tmp_path):
@@ -183,6 +225,7 @@ class TestLocalPathMount:
         written_json = []
 
         with patch("thresher.launcher.docker.tempfile_with") as mock_tf:
+
             @contextmanager
             def capture(content, **kwargs):
                 written_json.append(content)

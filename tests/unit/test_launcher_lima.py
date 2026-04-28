@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -128,19 +129,64 @@ class TestBuildLimaDockerCmd:
         idx = cmd.index("--user")
         assert cmd[idx + 1] == "thresher"
 
-    def test_includes_anthropic_api_key_env(self):
+    def test_includes_anthropic_api_key_env(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
         config = _make_config()
         cmd = _build_lima_docker_cmd(config)
         e_indices = [i for i, v in enumerate(cmd) if v == "-e"]
         env_vars = [cmd[i + 1] for i in e_indices]
-        assert "ANTHROPIC_API_KEY" in env_vars
+        assert "ANTHROPIC_API_KEY=sk-test-key" in env_vars
 
-    def test_includes_oauth_token_env(self):
+    def test_includes_oauth_token_env(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-test-token")
         config = _make_config()
         cmd = _build_lima_docker_cmd(config)
         e_indices = [i for i, v in enumerate(cmd) if v == "-e"]
         env_vars = [cmd[i + 1] for i in e_indices]
-        assert "CLAUDE_CODE_OAUTH_TOKEN" in env_vars
+        assert "CLAUDE_CODE_OAUTH_TOKEN=oauth-test-token" in env_vars
+
+    def test_omits_credentials_when_unset(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        config = _make_config()
+        cmd = _build_lima_docker_cmd(config)
+        e_indices = [i for i, v in enumerate(cmd) if v == "-e"]
+        env_vars = [cmd[i + 1] for i in e_indices]
+        assert not any(v.startswith("ANTHROPIC_API_KEY") for v in env_vars)
+        assert not any(v.startswith("CLAUDE_CODE_OAUTH_TOKEN") for v in env_vars)
+
+    def test_wksp_runtime_mounts_credentials(self, tmp_path, monkeypatch):
+        # Pretend the host has a wksp credentials file so the lima docker cmd
+        # emits the mount flag for it.
+        fake_home = tmp_path / "home"
+        creds = fake_home / ".config" / "workshop" / "credentials.json"
+        creds.parent.mkdir(parents=True)
+        creds.write_text("{}")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        config = ScanConfig(
+            repo_url="https://github.com/example/pkg",
+            output_dir="/tmp/test-output",
+            skip_ai=True,
+            agent_runtime="wksp",
+        )
+        cmd = _build_lima_docker_cmd(config)
+        v_indices = [i for i, a in enumerate(cmd) if a == "-v"]
+        vol_args = [cmd[i + 1] for i in v_indices]
+        # The container target is fixed; the staging source path is opaque.
+        assert any(
+            v.endswith(":/home/thresher/.config/workshop/credentials.json:ro") and v.startswith("/opt/runtime-")
+            for v in vol_args
+        )
+
+    def test_claude_runtime_omits_wksp_mount(self):
+        config = _make_config()
+        cmd = _build_lima_docker_cmd(config)
+        v_indices = [i for i, a in enumerate(cmd) if a == "-v"]
+        vol_args = [cmd[i + 1] for i in v_indices]
+        assert not any("workshop/credentials.json" in v for v in vol_args)
 
     def test_includes_tmpfs_mounts(self):
         config = _make_config()
